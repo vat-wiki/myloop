@@ -1,0 +1,87 @@
+{
+  "name": "mycoder",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc && npm run build --workspace apps/tui",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspace apps/tui",
+    "test": "vitest run && npm run test --workspace apps/tui",
+    "tui": "npm run build && node apps/tui/dist/main.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "default": "./dist/agent/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
+    },
+    "./messages": {
+      "types": "./dist/runtime/messages.d.ts",
+      "default": "./dist/runtime/messages.js"
+    },
+    "./terminal": {
+      "types": "./dist/runtime/terminal.d.ts",
+      "default": "./dist/runtime/terminal.js"
+    },
+    "./clients/anthropic": {
+      "types": "./dist/clients/anthropic.d.ts",
+      "default": "./dist/clients/anthropic.js"
+    },
+    "./clients/openai-chat": {
+      "types": "./dist/clients/openai-chat.d.ts",
+      "default": "./dist/clients/openai-chat.js"
+    },
+    "./clients/openai-responses": {
+      "types": "./dist/clients/openai-responses.d.ts",
+      "default": "./dist/clients/openai-responses.js"
+    },
+    "./skills": {
+      "types": "./dist/skills/index.d.ts",
+      "default": "./dist/skills/index.js"
+    },
+    "./composite": {
+      "types": "./dist/agent/composite.d.ts",
+      "default": "./dist/agent/composite.js"
+    },
+    "./agent/context": {
+      "types": "./dist/runtime/context.d.ts",
+      "default": "./dist/runtime/context.js"
+    },
+    "./runtime/context": {
+      "types": "./dist/runtime/context.d.ts",
+      "default": "./dist/runtime/context.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true
+  },
+  "config": {},
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7"
+  }
+}
