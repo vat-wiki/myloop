@@ -9,35 +9,31 @@ import {
   type EventListener,
   type ModelClient,
   type ModelUsageSummary,
-  type RunInput,
   type ToolDefinition,
   type ToolHandlers,
 } from "../runtime/index.js";
-import {
-  createUserInputAdapter,
-  type AgentUserInputResolver,
-  type UserInputAdapterOptions,
-} from "./user-input.js";
-import type { Agent, AgentResult, AgentRunInput } from "./types.js";
+import type { UserInput } from "../runtime/user-input.js";
+import type { Agent, AgentResult } from "./types.js";
 
 export type SingleAgentOptions = AgentRuntimeOptions & {
   name: string;
-  input?: AgentUserInputResolver | UserInputAdapterOptions;
 };
 
 export class SingleAgent implements Agent {
   readonly name: string;
   readonly runtime: AgentRuntime;
-  readonly input: AgentUserInputResolver;
 
-  constructor({ name, input, ...runtimeOptions }: SingleAgentOptions) {
+  constructor({ name, ...runtimeOptions }: SingleAgentOptions) {
     if (!name.trim()) {
       throw new Error("single agent name is required");
     }
 
     this.name = name;
-    this.input = isUserInputAdapter(input) ? input : createUserInputAdapter(input);
     this.runtime = new AgentRuntime(runtimeOptions);
+  }
+
+  get input() {
+    return this.runtime.input;
   }
 
   get modelClient(): ModelClient {
@@ -97,9 +93,8 @@ export class SingleAgent implements Agent {
     return this.runtime.compact();
   }
 
-  async run(input: AgentRunInput): Promise<AgentResult> {
-    const runtimeInput: RunInput = await this.input.resolve(input);
-    const response = await this.runtime.run(runtimeInput);
+  async run(input: UserInput): Promise<AgentResult> {
+    const response = await this.runtime.run(input);
     return {
       answer: responseText(response.content),
       response,
@@ -113,16 +108,6 @@ export class SingleAgent implements Agent {
   reset(): void {
     this.runtime.reset();
   }
-}
-
-function isUserInputAdapter(
-  value: AgentUserInputResolver | UserInputAdapterOptions | undefined,
-): value is AgentUserInputResolver {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  return "resolve" in value && typeof value.resolve === "function";
 }
 
 function responseText(content: Array<AgentContentBlock>): string {

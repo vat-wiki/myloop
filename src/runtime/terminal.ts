@@ -24,10 +24,10 @@ export function runPty({
       cwd,
       env: cleanEnv(),
     });
+
     let output = "";
     const timer = setTimeout(() => terminal.kill(), timeout);
     const onAbort = () => terminal.kill();
-
     terminal.onData((data) => {
       output += data;
     });

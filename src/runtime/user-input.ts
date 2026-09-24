@@ -4,9 +4,8 @@ import type {
   BinarySource,
   ImageMediaType,
   UserContentBlock,
-} from "../runtime/index.js";
-import { InMemoryArtifactStore, type ArtifactStore } from "../runtime/index.js";
-import type { AgentInputPart, AgentUserInput } from "./types.js";
+} from "./messages.js";
+import { InMemoryArtifactStore, type ArtifactStore } from "./artifacts.js";
 
 const DEFAULT_MAX_LOCAL_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -31,14 +30,37 @@ export type UserInputAdapterOptions = {
   artifactStore?: ArtifactStore;
 };
 
-export type AgentUserInputResolver = {
+export type UserInputPart =
+  | { type: "text"; text: string }
+  | { type: "imageFile"; path: string; mediaType?: ImageMediaType }
+  | { type: "documentFile"; path: string; title?: string }
+  | { type: "imageUrl"; url: string; mediaType?: ImageMediaType }
+  | { type: "documentUrl"; url: string; title?: string };
+
+export type UserInput =
+  | string
+  | UserContentBlock
+  | UserInputPart
+  | ReadonlyArray<string | UserContentBlock | UserInputPart>;
+
+export type UserInputResolver = {
   readonly artifactStore: ArtifactStore;
-  resolve(input: AgentUserInput): Promise<Array<UserContentBlock>>;
+  resolve(input: UserInput): Promise<Array<UserContentBlock>>;
 };
+
+export function isUserInputAdapter(
+  value: UserInputResolver | UserInputAdapterOptions | undefined,
+): value is UserInputResolver {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  return "resolve" in value && typeof value.resolve === "function";
+}
 
 export function createUserInputAdapter(
   options: UserInputAdapterOptions = {},
-): AgentUserInputResolver {
+): UserInputResolver {
   const resolvedOptions = {
     allowLocalFiles: options.allowLocalFiles ?? false,
     allowRemoteUrls: options.allowRemoteUrls ?? true,
@@ -55,7 +77,7 @@ export function createUserInputAdapter(
   }
   return {
     artifactStore: resolvedOptions.artifactStore,
-    async resolve(input: AgentUserInput): Promise<Array<UserContentBlock>> {
+    async resolve(input: UserInput): Promise<Array<UserContentBlock>> {
       const items = typeof input === "string" || !Array.isArray(input) ? [input] : input;
       const blocks: Array<UserContentBlock> = [];
       let totalBytes = 0;
@@ -73,7 +95,7 @@ export function createUserInputAdapter(
 }
 
 async function resolveItem(
-  item: string | UserContentBlock | AgentInputPart,
+  item: string | UserContentBlock | UserInputPart,
   options: {
     allowLocalFiles: boolean;
     allowRemoteUrls: boolean;

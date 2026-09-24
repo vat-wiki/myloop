@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createUserInputAdapter } from "../../src/agent/user-input.js";
+import { createUserInputAdapter } from "../../src/runtime/user-input.js";
 import { createInMemoryArtifactStore, InMemoryArtifactStore } from "../../src/runtime/artifacts.js";
 import { textBlock } from "../../src/runtime/messages.js";
 

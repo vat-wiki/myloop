@@ -1,20 +1,27 @@
-import { access, readdir, readFile } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import type { Skill } from "mycoder/skills";
+import { parseSkillFile, type Skill } from "mycoder/skills";
 
 const SKILL_FILENAME = "SKILL.md";
 
+export type LoadedSkill = Skill & {
+  path: string;
+};
+
 export type LoadSkillsOptions = {
+  directories?: ReadonlyArray<string>;
   cwd?: string;
   home?: string;
 };
 
-export async function loadSkills(options: LoadSkillsOptions = {}): Promise<Array<Skill>> {
-  const cwd = options.cwd ?? process.cwd();
-  const directories = await findSkillDirectories(cwd, options.home);
-  const skills = new Map<string, Skill>();
+export async function loadSkills(options: LoadSkillsOptions = {}): Promise<Array<LoadedSkill>> {
+  const skillDirectories = options.directories ?? await findSkillDirectories(
+    options.cwd ?? process.cwd(),
+    options.home,
+  );
+  const skills = new Map<string, LoadedSkill>();
 
-  for (const directory of directories) {
+  for (const directory of skillDirectories) {
     const entries = await readdir(directory, { withFileTypes: true });
     const skillNames = entries
       .filter((entry) => entry.isDirectory())
@@ -27,11 +34,10 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<Array
         continue;
       }
 
-      const skill = parseSkillFile({
-        directoryName: skillName,
-        contents: await readFile(skillPath, "utf8"),
+      const skill: LoadedSkill = {
+        ...(await parseSkillFile(skillPath, { fallbackName: skillName })),
         path: skillPath,
-      });
+      };
       if (!skills.has(skill.name)) {
         skills.set(skill.name, skill);
       }
@@ -39,75 +45,6 @@ export async function loadSkills(options: LoadSkillsOptions = {}): Promise<Array
   }
 
   return [...skills.values()];
-}
-
-export function parseSkillFile({
-  directoryName,
-  contents,
-  path,
-}: {
-  directoryName: string;
-  contents: string;
-  path: string;
-}): Skill {
-  const match = contents.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  if (!match) {
-    throw new Error(`invalid skill file ${path}: missing frontmatter`);
-  }
-
-  const metadata = parseFrontmatter(match[1] ?? "", path);
-  const name = metadata.name ?? directoryName;
-  const description = metadata.description;
-  const instructions = contents.slice(match[0].length).trim();
-
-  if (!name.trim()) {
-    throw new Error(`invalid skill file ${path}: name cannot be empty`);
-  }
-  if (!description) {
-    throw new Error(`invalid skill file ${path}: description is required`);
-  }
-  if (!instructions) {
-    throw new Error(`invalid skill file ${path}: instructions cannot be empty`);
-  }
-
-  return {
-    name,
-    description,
-    instructions,
-  };
-}
-
-function parseFrontmatter(contents: string, path: string): Record<string, string | undefined> {
-  const metadata: Record<string, string | undefined> = {};
-  const lines = contents.split(/\r?\n/);
-
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-    if (trimmedLine.length === 0 || trimmedLine.startsWith("#")) {
-      continue;
-    }
-
-    const separator = trimmedLine.indexOf(":");
-    if (separator <= 0) {
-      throw new Error(`invalid skill file ${path}: invalid frontmatter line "${trimmedLine}"`);
-    }
-
-    const key = trimmedLine.slice(0, separator).trim();
-    const value = trimmedLine.slice(separator + 1).trim();
-    metadata[key] = unquote(value);
-  }
-
-  return metadata;
-}
-
-function unquote(value: string): string {
-  if (value.length >= 2 && (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  )) {
-    return value.slice(1, -1);
-  }
-  return value;
 }
 
 async function findSkillDirectories(startDirectory: string, home?: string): Promise<Array<string>> {

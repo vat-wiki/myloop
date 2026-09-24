@@ -1,4 +1,12 @@
-import type { AgentContentBlock, ModelResponse } from "../runtime/index.js";
+import type { AgentContentBlock, ModelResponse, UserContentBlock } from "../runtime/index.js";
+import { textBlock } from "../runtime/messages.js";
+import type { UserInput } from "../runtime/user-input.js";
+import {
+  createUserInputAdapter,
+  isUserInputAdapter,
+  type UserInputAdapterOptions,
+  type UserInputResolver,
+} from "../runtime/user-input.js";
 import type { Agent, AgentResult, DelegationRecord } from "./types.js";
 
 export type NamedAgent = {
@@ -12,6 +20,7 @@ export type CompositeAgentOptions = {
   coordinator: Agent;
   workers: Array<NamedAgent>;
   maxDelegations?: number;
+  input?: UserInputResolver | UserInputAdapterOptions;
 };
 
 export type DelegationInstruction = {
@@ -21,7 +30,7 @@ export type DelegationInstruction = {
 
 export type CompositeAgentResult = AgentResult & {
   name: string;
-  input: string;
+  input: UserInput;
   delegations: Array<DelegationRecord>;
 };
 
@@ -34,12 +43,14 @@ export class CompositeAgent implements Agent {
   readonly coordinator: Agent;
   readonly workers: ReadonlyArray<NamedAgent>;
   readonly maxDelegations: number;
+  readonly input: UserInputResolver;
 
   constructor({
     name,
     coordinator,
     workers,
     maxDelegations = 10,
+    input,
   }: CompositeAgentOptions) {
     if (!name.trim()) {
       throw new Error("composite agent name is required");
@@ -66,16 +77,22 @@ export class CompositeAgent implements Agent {
     this.coordinator = coordinator;
     this.workers = workers;
     this.maxDelegations = maxDelegations;
+    this.input = isUserInputAdapter(input) ? input : createUserInputAdapter(input);
   }
 
-  async run(input: string): Promise<CompositeAgentResult> {
-    if (!input.trim()) {
+  async run(input: UserInput): Promise<CompositeAgentResult> {
+    if (typeof input === "string" && !input.trim()) {
+      throw new Error("composite agent input is required");
+    }
+
+    const inputBlocks = await this.input.resolve(input);
+    if (inputBlocks.length === 0) {
       throw new Error("composite agent input is required");
     }
 
     const delegations: Array<DelegationRecord> = [];
     let coordinatorInput = renderCoordinatorInput({
-      task: input,
+      task: inputBlocks,
       workers: this.workers,
       delegations,
       maxDelegations: this.maxDelegations,
@@ -131,7 +148,7 @@ export class CompositeAgent implements Agent {
 
       delegations.push(...batchRecords);
       coordinatorInput = renderCoordinatorInput({
-        task: input,
+        task: inputBlocks,
         workers: this.workers,
         delegations,
         latestDelegations: batchRecords,
@@ -160,8 +177,9 @@ export function createCompositeAgent({
   coordinator,
   workers,
   maxDelegations = 10,
+  input,
 }: CompositeAgentOptions): CompositeAgent {
-  return new CompositeAgent({ name, coordinator, workers, maxDelegations });
+  return new CompositeAgent({ name, coordinator, workers, maxDelegations, input });
 }
 
 function renderCoordinatorInput({
@@ -171,12 +189,12 @@ function renderCoordinatorInput({
   latestDelegations,
   maxDelegations,
 }: {
-  task: string;
+  task: ReadonlyArray<UserContentBlock>;
   workers: ReadonlyArray<NamedAgent>;
   delegations: ReadonlyArray<DelegationRecord>;
   latestDelegations?: ReadonlyArray<DelegationRecord>;
   maxDelegations: number;
-}): string {
+}): Array<UserContentBlock> {
   const workerList = workers
     .map((worker) => `- ${worker.name}: ${worker.description}`)
     .join("\n");
@@ -192,10 +210,15 @@ function renderCoordinatorInput({
       .join("\n\n")}`;
   const remainingDelegations = maxDelegations - delegations.length;
 
-  return `
-Task:
-${task}
+  const taskText = task
+    .filter((block): block is Extract<UserContentBlock, { type: "text" }> => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
 
+  const instruction = `
+Task:
+${taskText || "See attached user content."}
 Workers:
 ${workerList}
 
@@ -213,6 +236,8 @@ To delegate to multiple workers in parallel, return:
 {"action":"delegate","delegations":[{"worker":"first-worker","input":"..."},{"worker":"second-worker","input":"..."}]}
 To finish, return: {"action":"finish","answer":"final answer"}
 `.trim();
+
+  return [...task, textBlock(instruction)];
 }
 
 function parseInstruction(text: string): CoordinatorInstruction {

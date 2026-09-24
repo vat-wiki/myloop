@@ -8,6 +8,8 @@
 
 `Agent` 是可独立执行的个体。`SingleAgent` 是单上下文个体，`CompositeAgent` 是由多个 Agent 组成的个体。底层执行系统是 `AgentRuntime`：它维护消息、调用 ModelClient、执行工具循环、处理事件和上下文压缩。
 
+`UserInput` 是统一的用户输入协议。Runtime 拥有 `user-input` 边界适配器，负责把文本、图片、文档、本地文件和远程 URL 归一化为内部消息块，并集中处理 media type、artifact、大小和安全限制。
+
 `bash` 是 Runtime 的原生能力，而不是可插拔工具。SDK 当前不提供通用工具注入点。
 
 Skill 是上层的领域说明和操作手册。它不新增执行通道，也不改变 Agent 内核；宿主应用负责选择 Skill，并把它们组合成最终的 system prompt。
@@ -38,6 +40,24 @@ const agent = new SingleAgent({
   }),
 });
 ```
+
+`SKILL.md` 也可以直接解析为 `Skill`。`parseSkill` 接受文件路径或 Markdown 内容；以 `---` 开头的输入会按内容解析，否则按路径读取。
+
+```ts
+import { parseSkill } from "mycoder/skills";
+
+const skill = await parseSkill(".agents/skills/repo/SKILL.md");
+const inlineSkill = await parseSkill([
+  "---",
+  "name: repo",
+  "description: 分析当前仓库",
+  "---",
+  "",
+  "优先读取 README.md、package.json 和 src。",
+].join("\n"));
+```
+
+frontmatter 必须位于文件开头，支持基本的 `key: value` 和引号值。按文件路径解析时，`name` 可以省略并回退为 skill 目录名；按内容解析时需要显式提供 `name`。
 
 依赖方向是 `skills -> agent/runtime`，而不是 `agent/runtime -> skills`。
 
@@ -209,6 +229,8 @@ npm test
 
 ## TUI 配置文件
 
+TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更新版本，并启用 Node FFI。
+
 `mycoder-tui` 会自动读取 JSON 配置文件。全局配置是 `~/.agents/mycoder.json`；非 production 环境还会从当前目录向上查找 `.agents/mycoder.json`。配置合并很简单：project 字段直接覆盖全局同名字段。最终优先级是：CLI 参数 > project 配置 > 全局配置 > 环境变量和内置默认值。
 
 ```json
@@ -279,11 +301,11 @@ await agent.run("刚才哪个目录里有哪些 TypeScript 文件？");
 `run()` 的输入可以是纯文本、内部内容块、输入描述符，或者它们组成的数组：
 
 ```ts
-type AgentUserInput =
+type UserInput =
   | string
   | UserContentBlock
-  | AgentInputPart
-  | Array<string | UserContentBlock | AgentInputPart>;
+  | UserInputPart
+  | Array<string | UserContentBlock | UserInputPart>;
 ```
 
 ## 多模态消息
@@ -444,7 +466,7 @@ const modelClient = new Anthropic({
 
 ## Terminal 工具
 
-Agent 当前固定内置一个 `bash` 工具。当模型返回 `tool_call` 时，Agent 会通过 `node-pty` 执行命令，等待工具循环直到模型给出最终回答。
+Agent 当前固定内置一个 `bash` 工具。当模型返回 `tool_call` 时，Agent 会通过 PTY 执行命令，等待工具循环直到模型给出最终回答。
 
 ```ts
 await agent.run("用 ls 查看当前目录，然后总结文件类型");

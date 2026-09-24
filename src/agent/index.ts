@@ -1,9 +1,12 @@
 export { SingleAgent, type SingleAgentOptions } from "./single.js";
 export {
   createUserInputAdapter,
-  type AgentUserInputResolver,
+  isUserInputAdapter,
+  type UserInput,
+  type UserInputPart,
   type UserInputAdapterOptions,
-} from "./user-input.js";
+  type UserInputResolver,
+} from "../runtime/user-input.js";
 export {
   CompositeAgent,
   createCompositeAgent,
@@ -12,11 +15,15 @@ export {
   type DelegationInstruction,
   type NamedAgent,
 } from "./composite.js";
+export {
+  AgentSession,
+  createAgentSession,
+  type AgentSessionOptions,
+  type AgentSessionResult,
+  type AgentSessionStatus,
+} from "./session.js";
 export type {
   Agent,
-  AgentInputPart,
   AgentResult,
-  AgentRunInput,
-  AgentUserInput,
   DelegationRecord,
 } from "./types.js";

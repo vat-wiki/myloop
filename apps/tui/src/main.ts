@@ -1,21 +1,27 @@
+#!/usr/bin/env -S node --experimental-ffi
 import { createUserInputAdapter, SingleAgent } from "mycoder/agent";
 import { Anthropic } from "mycoder/clients/anthropic";
 import { OpenAIChat } from "mycoder/clients/openai-chat";
 import { OpenAIResponses } from "mycoder/clients/openai-responses";
-import { composeSystem } from "mycoder/skills";
 import { runTuiApp } from "./app.js";
+import { createTuiLogger } from "./logging.js";
+import type { TuiLogger } from "./logging.js";
+import { composeTuiSystem, loadCoreInstructions, loadTuiSkills } from "./system-prompt.js";
 import { loadTuiConfig } from "./config.js";
-import { loadSkills } from "./skills.js";
-import { errorText, style } from "./presenter.js";
+import { errorText } from "./state.js";
 import { formatTuiHelp, parseTuiArgs, type TuiCliOptions } from "./cli.js";
 
 export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)): Promise<number> {
   let options: TuiCliOptions;
   let input: ReturnType<typeof createUserInputAdapter>;
   let agent: SingleAgent;
+  let logger: TuiLogger | undefined;
   try {
     const { config } = await loadTuiConfig({ env: process.env });
-    const skills = await loadSkills({ home: process.env.HOME });
+    const [instructions, skills] = await Promise.all([
+      loadCoreInstructions(),
+      loadTuiSkills({ home: process.env.HOME }),
+    ]);
     options = parseTuiArgs(argv, process.env, config);
 
     if (options.help) {
@@ -25,25 +31,24 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
 
     input = createUserInputAdapter({ allowLocalFiles: options.allowLocalFiles });
     const modelClient = createModelClient(options, process.env, input.artifactStore);
+    const logger = await createTuiLogger({ protocol: options.protocol, model: options.model });
     agent = new SingleAgent({
       name: "tui-agent",
       modelClient,
       input,
-      system: composeSystem({
-        base: "你是终端Agent。用bash工具完成用户任务，用中文简洁回答。",
-        skills,
-      }),
+      system: composeTuiSystem({ instructions, skills }),
+      extensions: [logger.extension],
     });
   } catch (error) {
-    process.stderr.write(`${style.red(errorText(error))}\n\n${formatTuiHelp()}\n`);
+    process.stderr.write(`${errorText(error)}\n\n${formatTuiHelp()}\n`);
     return 2;
   }
 
   try {
-    await runTuiApp({ agent, protocol: options.protocol, model: options.model });
+    await runTuiApp({ agent, protocol: options.protocol, model: options.model, logger });
     return 0;
   } catch (error) {
-    process.stderr.write(`${style.red(errorText(error))}\n`);
+    process.stderr.write(`${errorText(error)}\n`);
     return 1;
   }
 }

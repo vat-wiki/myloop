@@ -2,18 +2,26 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadSkills, parseSkillFile } from "../src/skills.js";
+import { composeTuiSystem, loadCoreInstructions, loadTuiSkills } from "../src/system-prompt.js";
+import { parseSkillContents } from "mycoder/skills";
+import { loadSkills } from "../src/skills.js";
+
+const temporaryDirectories: Array<string> = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, {
+    recursive: true,
+    force: true,
+  })));
+});
+
+async function makeTemporaryDirectory(): Promise<string> {
+  const directory = await mkdtemp(join(tmpdir(), "mycoder-skills-"));
+  temporaryDirectories.push(directory);
+  return directory;
+}
 
 describe("TUI skills loading", () => {
-  const temporaryDirectories: Array<string> = [];
-
-  afterEach(async () => {
-    await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, {
-      recursive: true,
-      force: true,
-    })));
-  });
-
   it("loads project and global skills from .agents directories", async () => {
     const home = await makeTemporaryDirectory();
     const project = await makeTemporaryDirectory();
@@ -27,11 +35,13 @@ describe("TUI skills loading", () => {
         name: "project-skill",
         description: "Project skill",
         instructions: "Project instructions",
+        path: join(project, ".agents", "skills", "project-skill", "SKILL.md"),
       },
       {
         name: "global-skill",
         description: "Global skill",
         instructions: "Global instructions",
+        path: join(home, ".agents", "skills", "global-skill", "SKILL.md"),
       },
     ]);
   });
@@ -51,11 +61,13 @@ describe("TUI skills loading", () => {
   });
 
   it("parses quoted frontmatter values and trims instructions", () => {
-    const skill = parseSkillFile({
-      directoryName: "fallback-name",
-      contents: "---\nname: \"quoted-name\"\ndescription: 'Quoted skill'\n---\n\nBody\n",
-      path: "/tmp/SKILL.md",
-    });
+    const skill = parseSkillContents(
+      "---\nname: \"quoted-name\"\ndescription: 'Quoted skill'\n---\n\nBody\n",
+      {
+        fallbackName: "fallback-name",
+        path: "/tmp/SKILL.md",
+      },
+    );
 
     expect(skill).toEqual({
       name: "quoted-name",
@@ -65,18 +77,54 @@ describe("TUI skills loading", () => {
   });
 
   it("rejects malformed skill files", () => {
-    expect(() => parseSkillFile({
-      directoryName: "invalid",
-      contents: "No frontmatter",
+    expect(() => parseSkillContents("No frontmatter", {
       path: "/tmp/SKILL.md",
     })).toThrow("missing frontmatter");
   });
 
-  async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-skills-"));
-    temporaryDirectories.push(directory);
-    return directory;
-  }
+});
+
+describe("TUI system prompt", () => {
+  it("loads core shell instructions", async () => {
+    const instructions = await loadCoreInstructions();
+
+    expect(instructions).toContain("# Shell Roadmap");
+    expect(instructions).toContain("Verify: focused check");
+    expect(instructions).not.toContain("name:");
+  });
+
+  it("inlines core instructions and leaves skills on demand", () => {
+    const system = composeTuiSystem({
+      instructions: "Run focused checks first.",
+      skills: [{
+        name: "project-skill",
+        description: "Project skill",
+        instructions: "Project instructions",
+        path: "/tmp/project-skill/SKILL.md",
+      }],
+    });
+
+    expect(system).toContain("Run focused checks first.");
+    expect(system).toContain("## Skills");
+    expect(system).toContain("`/tmp`");
+    expect(system).toContain("- `project-skill`: Project skill");
+    expect(system).not.toContain("Project instructions");
+  });
+
+  it("supports installed skill metadata in the catalog", () => {
+    const system = composeTuiSystem({
+      skills: [{
+        name: "project-skill",
+        description: "Project skill",
+        instructions: "Project instructions",
+        path: "/tmp/project-skill/SKILL.md",
+      }],
+    });
+
+    expect(system).toContain("`/tmp`");
+    expect(system).toContain("- `project-skill`: Project skill");
+    expect(system).not.toContain("Project instructions");
+  });
 });
 
 async function writeSkill(

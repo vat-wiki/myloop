@@ -22,6 +22,15 @@ Tests mirror source behavior in `tests/`. Public entry points and package export
 
 Use TypeScript with strict compiler settings, two-space indentation, named exports, and explicit type-only imports (`import type`). Follow `NodeNext` module resolution and use `.js` extensions in relative imports. Prefer clear domain names such as `AgentRuntime`, `ModelClient`, `AgentExtension`, and `UserInputAdapter`; keep functions small and avoid adding abstractions that are not exercised by runtime behavior or tests.
 
+### Prompt Guidelines
+
+- Write prompts as signposts, not tutorials: one phrase should trigger the right behavior; omit explanations the model already knows.
+- Maximize information density per character; use the fewest unambiguous words and remove filler, repeated context, and common-knowledge examples.
+- Distinguish always-on core guidance from on-demand skills. Inline universal rules; expose optional skills by `name`, `description`, and path so the agent can inspect the relevant `SKILL.md` with existing tools.
+- Prefer the most appropriate tool and say so explicitly (for example, `fd` over `find`, `rg` over `grep`, `jq` over text-parsing JSON); use generic commands only as checked fallbacks.
+- Put shared context once, group related items under one path or heading, and prefer compact `name: description` catalogs over verbose per-item blocks.
+- Make required behavior unmistakable: use hard preconditions such as “before …” for mandatory steps, while leaving genuinely optional choices to model judgment.
+
 No formatter or linter is configured. Run `npm run typecheck` before submitting changes.
 
 ## Testing Guidelines

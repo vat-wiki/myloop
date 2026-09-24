@@ -2,12 +2,12 @@ export {
   AgentRuntime,
   createAgentRuntime,
   type AgentRuntimeOptions,
-  type RunInput,
   type ToolHandler,
   type ToolHandlers,
 } from "./agent.js";
 export * from "./messages.js";
 export * from "./artifacts.js";
+export * from "./user-input.js";
 export type { AgentEventMap, EventListener } from "./events.js";
 export { EventBus } from "./events.js";
 export { createTerminalTool, runPty, type RunPtyOptions } from "./terminal.js";

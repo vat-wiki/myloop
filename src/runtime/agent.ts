@@ -26,6 +26,13 @@ import {
   measureContextPressure,
   compactFallback,
 } from "./context.js";
+import {
+  createUserInputAdapter,
+  isUserInputAdapter,
+  type UserInput,
+  type UserInputAdapterOptions,
+  type UserInputResolver,
+} from "./user-input.js";
 
 export type ToolHandler = (
   input: Record<string, unknown>,
@@ -38,9 +45,8 @@ export type AgentRuntimeOptions = {
   modelClient: ModelClient;
   system?: string;
   extensions?: ReadonlyArray<AgentExtension>;
+  input?: UserInputResolver | UserInputAdapterOptions;
 };
-
-export type RunInput = string | Array<UserContentBlock>;
 
 class AgentRuntime {
   #controller: AbortController | null = null;
@@ -51,6 +57,7 @@ class AgentRuntime {
   readonly modelClient: ModelClient;
   readonly system: string;
   readonly extensions: ReadonlyArray<AgentExtension>;
+  readonly input: UserInputResolver;
   readonly tools: Array<ToolDefinition> = [createTerminalTool()];
   readonly toolHandlers: ToolHandlers = {
     bash: (input, { signal }) => runPty({
@@ -70,6 +77,7 @@ class AgentRuntime {
     modelClient,
     system = "你是终端Agent,用bash工具执行命令来完成任务,用中文简洁回答。",
     extensions = [],
+    input,
   }: AgentRuntimeOptions) {
     if (!modelClient) {
       throw new Error("modelClient is required");
@@ -78,6 +86,7 @@ class AgentRuntime {
     this.modelClient = modelClient;
     this.system = system;
     this.extensions = extensions;
+    this.input = isUserInputAdapter(input) ? input : createUserInputAdapter(input);
   }
 
   on<K extends keyof AgentEventMap>(type: K, listener: EventListener<AgentEventMap[K]>): () => void {
@@ -100,7 +109,7 @@ class AgentRuntime {
     this.#controller?.abort(reason);
   }
 
-  async run(input: RunInput): Promise<ModelResponse> {
+  async run(input: UserInput): Promise<ModelResponse> {
     if (this.#running) {
       throw new Error("agent is already running");
     }
@@ -110,7 +119,8 @@ class AgentRuntime {
     this.#running = true;
 
     try {
-      const message = createUserMessage(input);
+      const runtimeInput = await this.input.resolve(input);
+      const message = createUserMessage(runtimeInput);
       this.messages.push(message);
       this.#events.emit("message", { message });
       this.#events.emit("user_message", { message });

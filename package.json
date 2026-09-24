@@ -11,7 +11,7 @@
     "build": "tsc && npm run build --workspace apps/tui",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace apps/tui",
     "test": "vitest run && npm run test --workspace apps/tui",
-    "tui": "npm run build && node apps/tui/dist/main.js",
+    "tui": "npm run build && node --experimental-ffi apps/tui/dist/main.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [],
@@ -58,6 +58,10 @@
     "./composite": {
       "types": "./dist/agent/composite.d.ts",
       "default": "./dist/agent/composite.js"
+    },
+    "./session": {
+      "types": "./dist/agent/session.d.ts",
+      "default": "./dist/agent/session.js"
     },
     "./agent/context": {
       "types": "./dist/runtime/context.d.ts",

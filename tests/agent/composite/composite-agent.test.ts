@@ -86,4 +86,49 @@ describe("createCompositeAgent", () => {
 
     await expect(composite.run(" ")).rejects.toThrow("composite agent input is required");
   });
+
+  it("normalizes rich user input before coordinating workers", async () => {
+    const requests: Array<ModelRequest> = [];
+    const coordinator = new SingleAgent({
+      name: "coordinator",
+      modelClient: modelClientWith(vi.fn().mockImplementation((request: ModelRequest) => {
+        requests.push(request);
+        return Promise.resolve(response([textBlock("Task complete.")]));
+      })),
+    });
+    const worker = agentWithSequence("worker", [response([textBlock("done")])]);
+    const composite = createCompositeAgent({
+      name: "team",
+      coordinator,
+      workers: [{ name: "worker", description: "does work", agent: worker }],
+      input: {
+        artifactStore: { put: vi.fn() } as never,
+        resolve: async () => [
+          textBlock("Describe the attached diagram."),
+          {
+            type: "image",
+            mediaType: "image/png",
+            source: { type: "url", url: "https://example.com/diagram.png" },
+          },
+        ],
+      },
+    });
+
+    const result = await composite.run([{ type: "text", text: "unused raw input" }]);
+
+    expect(result.input).toEqual([{ type: "text", text: "unused raw input" }]);
+    expect(requests[0]?.messages[0]?.content).toHaveLength(3);
+    expect(requests[0]?.messages[0]?.content[0]).toEqual({
+      type: "text",
+      text: "Describe the attached diagram.",
+    });
+    expect(requests[0]?.messages[0]?.content[1]).toMatchObject({
+      type: "image",
+      source: { type: "url", url: "https://example.com/diagram.png" },
+    });
+    expect(requests[0]?.messages[0]?.content[2]).toEqual({
+      type: "text",
+      text: expect.stringContaining("Workers:"),
+    });
+  });
 });
