@@ -21,6 +21,7 @@ describe("TUI config loading", () => {
       protocol: "openai-chat",
       model: "gpt-home",
       apiKey: "direct-key",
+      sessionId: undefined,
     }));
 
     const { config, sources } = await loadTuiConfig({ env: {}, cwd: home, home });
@@ -33,6 +34,19 @@ describe("TUI config loading", () => {
     expect(sources.global).toBe(join(home, ".agents", "mycoder.json"));
   });
 
+  it("validates a configured session id", async () => {
+    const home = await makeTemporaryDirectory();
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents", "mycoder.json"), JSON.stringify({ sessionId: "work-1" }));
+
+    await expect(loadTuiConfig({ env: {}, cwd: home, home })).resolves.toMatchObject({
+      config: { sessionId: "work-1" },
+    });
+
+    await writeFile(join(home, ".agents", "mycoder.json"), JSON.stringify({ sessionId: "../escape" }));
+    await expect(loadTuiConfig({ env: {}, cwd: home, home })).rejects.toThrow("config sessionId");
+  });
+
   it("lets the project config override global config", async () => {
     const home = await makeTemporaryDirectory();
     const project = await makeTemporaryDirectory();
@@ -41,7 +55,6 @@ describe("TUI config loading", () => {
     await writeFile(join(home, ".agents", "mycoder.json"), JSON.stringify({
       protocol: "anthropic",
       model: "claude-home",
-      maxTokens: 1_000,
       allowLocalFiles: false,
     }));
     await writeFile(join(project, ".agents", "mycoder.json"), JSON.stringify({
@@ -59,7 +72,6 @@ describe("TUI config loading", () => {
     expect(config).toEqual({
       protocol: "openai-chat",
       model: "gpt-project",
-      maxTokens: 1_000,
       allowLocalFiles: true,
     });
     expect(sources.global).toBe(join(home, ".agents", "mycoder.json"));
@@ -104,6 +116,35 @@ describe("TUI config loading", () => {
     await expect(loadTuiConfig({ env: {}, cwd: unknown, home: unknown }))
       .rejects
       .toThrow("config has unknown field: provider");
+
+    const invalidWindow = await makeTemporaryDirectory();
+    await mkdir(join(invalidWindow, ".agents"), { recursive: true });
+    await writeFile(join(invalidWindow, ".agents", "mycoder.json"), JSON.stringify({
+      contextWindowTokens: 0,
+    }));
+
+    await expect(loadTuiConfig({ env: {}, cwd: invalidWindow, home: invalidWindow }))
+      .rejects
+      .toThrow("config contextWindowTokens must be a positive integer");
+  });
+
+  it("ignores deprecated config fields", async () => {
+    const home = await makeTemporaryDirectory();
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents", "mycoder.json"), JSON.stringify({
+      protocol: "anthropic",
+      model: "claude-home",
+      maxTokens: 1_000,
+      timeoutMs: 60_000,
+      retryAttempts: 2,
+    }));
+
+    const { config } = await loadTuiConfig({ env: {}, cwd: home, home });
+
+    expect(config).toEqual({
+      protocol: "anthropic",
+      model: "claude-home",
+    });
   });
 
   async function makeTemporaryDirectory(): Promise<string> {

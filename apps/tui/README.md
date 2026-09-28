@@ -58,6 +58,12 @@
 
 完整日志写入 `.agents/mycoder/logs/*.jsonl`。日志包含任务文本、命令和输出；不要把 `.agents` 提交到公共仓库。
 
+### 想继续上次的会话怎么办
+
+TUI 默认每次启动都开启新会话，并在第一轮对话后写入 `.agents/mycoder/sessions/`。只有通过 `--session-id work-1` 或配置里的 `sessionId` 指定时，启动才会恢复该会话。运行中输入 `/sessions` 可以列出并切换已有会话。`/reset` 会清空当前会话文件。
+
+会话文件包含任务和回复；不要把 `.agents` 提交到公共仓库。
+
 ### 想中途打断怎么办
 
 `Esc` 随时打断，与看不看过程无关。
@@ -70,10 +76,13 @@
 
 | 命令 | 说明 |
 |------|------|
+| `/sessions` | 列出并切换会话 |
 | `/help` | 显示命令列表 |
-| `/usage` | 显示累计 token 用量 |
+| `/usage` | 显示最近一次模型调用用量 |
 | `/reset` | 重置会话和用量 |
 | `/exit` | 退出 |
+
+输入 `/` 时显示命令候选。`↑/↓` 或 `Shift+Tab` 选择，`Enter` 执行选中命令，`Tab` 只补全。
 
 ## 架构
 
@@ -81,7 +90,7 @@ TUI 基于 [@opentui/solid](https://github.com/opentui/opentui) 构建，事件�
 
 - `tool_start` → 更新步骤计数和描述
 - `assistant_message` → 缓存最终结果文本
-- `model_usage` → 更新 header 用量计数
+- `model_response` → 更新 header 中最近一次调用的用量计数
 - `text_delta` → **有意忽略**（不渲染流式文本）
 - `tool_end` → **有意忽略**（不渲染工具输出）
 

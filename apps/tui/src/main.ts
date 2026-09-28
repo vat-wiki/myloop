@@ -8,6 +8,7 @@ import { createTuiLogger } from "./logging.js";
 import type { TuiLogger } from "./logging.js";
 import { composeTuiSystem, loadCoreInstructions, loadTuiSkills } from "./system-prompt.js";
 import { loadTuiConfig } from "./config.js";
+import { createTuiSessionId, FileSessionStore } from "./session.js";
 import { errorText } from "./state.js";
 import { formatTuiHelp, parseTuiArgs, type TuiCliOptions } from "./cli.js";
 
@@ -16,6 +17,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
   let input: ReturnType<typeof createUserInputAdapter>;
   let agent: SingleAgent;
   let logger: TuiLogger | undefined;
+  let sessionStore: FileSessionStore | undefined;
   try {
     const { config } = await loadTuiConfig({ env: process.env });
     const [instructions, skills] = await Promise.all([
@@ -30,22 +32,26 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
     }
 
     input = createUserInputAdapter({ allowLocalFiles: options.allowLocalFiles });
+    sessionStore = new FileSessionStore({ cwd: process.cwd() });
     const modelClient = createModelClient(options, process.env, input.artifactStore);
-    const logger = await createTuiLogger({ protocol: options.protocol, model: options.model });
+    logger = await createTuiLogger({ protocol: options.protocol, model: options.model });
     agent = new SingleAgent({
       name: "tui-agent",
       modelClient,
       input,
       system: composeTuiSystem({ instructions, skills }),
       extensions: [logger.extension],
+      sessionId: options.sessionId ?? createTuiSessionId(),
+      sessionStore,
     });
+    if (options.sessionId) await agent.loadSession();
   } catch (error) {
     process.stderr.write(`${errorText(error)}\n\n${formatTuiHelp()}\n`);
     return 2;
   }
 
   try {
-    await runTuiApp({ agent, protocol: options.protocol, model: options.model, logger });
+    await runTuiApp({ agent, protocol: options.protocol, model: options.model, logger, sessionStore });
     return 0;
   } catch (error) {
     process.stderr.write(`${errorText(error)}\n`);
@@ -60,9 +66,6 @@ function createModelClient(
 ) {
   const httpOptions = {
     baseURL: options.baseURL,
-    maxTokens: options.maxTokens,
-    timeoutMs: options.timeoutMs,
-    retry: { attempts: options.retryAttempts },
     artifactStore,
   };
   const apiKey = options.apiKey ?? env[
@@ -74,6 +77,7 @@ function createModelClient(
       ...httpOptions,
       apiKey,
       model: options.model,
+      contextWindowTokens: options.contextWindowTokens,
     });
   }
   if (options.protocol === "openai-chat") {
@@ -81,12 +85,14 @@ function createModelClient(
       ...httpOptions,
       apiKey,
       model: options.model,
+      contextWindowTokens: options.contextWindowTokens,
     });
   }
   return new OpenAIResponses({
     ...httpOptions,
     apiKey,
     model: options.model,
+    contextWindowTokens: options.contextWindowTokens,
   });
 }
 

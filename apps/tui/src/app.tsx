@@ -2,6 +2,7 @@ import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { render } from "@opentui/solid";
 import type { SingleAgent } from "mycoder/agent";
 import type { TuiLogger } from "./logging.js";
+import type { RuntimeSessionStore } from "mycoder/runtime";
 import { TuiApp } from "./ui.js";
 
 export type TuiAppOptions = {
@@ -9,6 +10,7 @@ export type TuiAppOptions = {
   protocol: string;
   model: string;
   logger?: TuiLogger;
+  sessionStore?: RuntimeSessionStore;
   input?: NodeJS.ReadStream;
   output?: NodeJS.WriteStream;
 };
@@ -18,6 +20,7 @@ export async function runTuiApp({
   protocol,
   model,
   logger,
+  sessionStore,
   input = process.stdin,
   output = process.stdout,
 }: TuiAppOptions): Promise<void> {
@@ -27,6 +30,11 @@ export async function runTuiApp({
   });
 
   let renderer: CliRenderer | undefined;
+  let interrupt: (() => void) | undefined;
+  let clearInput: (() => void) | undefined;
+  let completeCommand: (() => boolean) | undefined;
+  let selectCommand: ((direction: 1 | -1) => boolean) | undefined;
+  let submitCommand: (() => boolean) | undefined;
   try {
     renderer = await createCliRenderer({
       stdin: input,
@@ -37,7 +45,42 @@ export async function runTuiApp({
     });
     renderer.on("destroy", () => resolveClosed?.());
     const activeRenderer = renderer;
-    activeRenderer.keyInput.on("keypress", (event: { ctrl?: boolean; name?: string; stopPropagation?: () => void }) => {
+    activeRenderer._internalKeyInput.onInternal("keypress", (event: { ctrl?: boolean; shift?: boolean; name?: string; stopPropagation?: () => void }) => {
+      if (event.name === "escape") {
+        event.stopPropagation?.();
+        interrupt?.();
+        return;
+      }
+      if (event.ctrl && event.name === "u") {
+        event.stopPropagation?.();
+        clearInput?.();
+        return;
+      }
+      if (event.name === "tab") {
+        if (event.shift && selectCommand?.(-1)) {
+          event.stopPropagation?.();
+          return;
+        }
+        event.stopPropagation?.();
+        if (completeCommand?.()) {
+          return;
+        }
+      }
+      if (
+        (event.name === "return" || event.name === "kpenter") &&
+        !event.shift &&
+        submitCommand?.()
+      ) {
+        event.stopPropagation?.();
+        return;
+      }
+      if (
+        (event.name === "up" || event.name === "down") &&
+        selectCommand?.(event.name === "up" ? -1 : 1)
+      ) {
+        event.stopPropagation?.();
+        return;
+      }
       if (!event.ctrl || event.name !== "c") return;
       event.stopPropagation?.();
       if (activeRenderer.hasSelection) {
@@ -55,7 +98,23 @@ export async function runTuiApp({
           protocol={protocol}
           model={model}
           logger={logger}
+          sessionStore={sessionStore}
           onExit={() => resolveClosed?.()}
+          registerInterrupt={(handler) => {
+            interrupt = handler;
+          }}
+          registerClearInput={(handler) => {
+            clearInput = handler;
+          }}
+          registerCompleteCommand={(handler) => {
+            completeCommand = handler;
+          }}
+          registerSelectCommand={(handler) => {
+            selectCommand = handler;
+          }}
+          registerSubmitCommand={(handler) => {
+            submitCommand = handler;
+          }}
         />
       ),
       renderer,

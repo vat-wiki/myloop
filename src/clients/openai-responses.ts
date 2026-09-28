@@ -64,7 +64,7 @@ class OpenAIResponses {
   readonly context: ModelContextInfo;
   readonly #options: OpenAIResponsesOptions;
 
-  constructor(options: OpenAIResponsesOptions) {
+  constructor({ contextWindowTokens, ...options }: OpenAIResponsesOptions) {
     if (!options.model) {
       throw new Error("model is required");
     }
@@ -73,7 +73,7 @@ class OpenAIResponses {
     this.model = options.model;
     this.maxTokens = options.maxTokens ?? 4_096;
     this.context = {
-      contextWindowTokens: 128_000,
+      contextWindowTokens: contextWindowTokens ?? 128_000,
       reservedOutputTokens: this.maxTokens,
       safetyTokens: 20_000,
       estimateRequestTokens(request: ModelRequest): number {

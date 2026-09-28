@@ -107,6 +107,25 @@ wrapToolCall: outer extension wraps inner extension
 
 上下文压缩是 Runtime 核心能力，见下一节；`AgentExtension` 更适合审计、缓存标记和日志脱敏这类通用 middleware。
 
+Runtime 提供可复用的 JSONL 日志扩展：
+
+```ts
+import { createAgentLogger } from "mycoder";
+
+const logger = await createAgentLogger({
+  directory: ".logs",
+  metadata: { model: "test-model" },
+});
+
+const agent = new SingleAgent({
+  name: "logged-agent",
+  modelClient,
+  extensions: [logger.extension],
+});
+```
+
+日志 sink 属于 opt-in 扩展；宿主应用决定日志位置和保留策略。
+
 ## Context Compaction
 
 Runtime 拥有 `messages`，并在每轮 ModelClient 调用前检查上下文压力。物理限制由 ModelClient 暴露；Runtime 不做模型驱动的智能摘要，只在接近物理上限时执行确定性 fallback。
@@ -239,14 +258,19 @@ TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更�
   "model": "claude-sonnet-4-5",
   "baseURL": "https://api.anthropic.com/v1",
   "apiKey": "local-development-key-only",
-  "maxTokens": 8192,
-  "timeoutMs": 60000,
-  "retryAttempts": 2,
-  "allowLocalFiles": true
+  "allowLocalFiles": true,
+  "contextWindowTokens": 131072,
+  "sessionId": "work-1"
 }
 ```
 
 `protocol` 只描述 API 协议；`model` 必须通过配置、CLI 或环境变量提供，SDK 不维护模型列表。`apiKey` 可以直接写入本地开发配置，但不要提交包含真实 key 的配置文件；不配置时默认读取 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`。
+
+`contextWindowTokens` 覆盖协议默认上下文窗口；未配置时 `openai-chat` 和 `openai-responses` 默认 `128000`，`anthropic` 默认 `200000`。也可以用 `--context-window-tokens <tokens>` 临时覆盖。
+
+未指定 `sessionId` 时，TUI 每次启动都会开启新会话；配置 `sessionId` 或传入 `--session-id <id>` 时才在启动时恢复。会话文件保存在 `.agents/mycoder/sessions/`，运行中输入 `/sessions` 可列出并切换，`/reset` 会清空当前会话。
+
+会话文件包含任务和回复；不要把 `.agents` 提交到公共仓库。
 
 ## 快速开始
 
@@ -297,6 +321,45 @@ await agent.run("刚才哪个目录里有哪些 TypeScript 文件？");
 - `run()` 必须逐次 `await`，同一个 Agent 不能并发运行。
 - `agent.messages` 是当前会话状态。
 - `agent.reset()` 会清空会话；运行中调用会抛错。
+
+会话快照由 Runtime 提供并校验；是否落盘、何时落盘由宿主应用决定：
+
+```ts
+const snapshot = agent.snapshot();
+
+const restoredAgent = new AgentRuntime({ modelClient });
+restoredAgent.restore(snapshot);
+```
+
+如果需要持久化，可以实现 `RuntimeSessionStore` 后注入 Runtime：
+
+```ts
+import type { RuntimeSessionStore } from "mycoder";
+
+const sessionStore: RuntimeSessionStore = {
+  async save(sessionId, snapshot) {
+    await storage.write(sessionId, JSON.stringify(snapshot));
+  },
+  async load(sessionId) {
+    const content = await storage.read(sessionId);
+    return content ? JSON.parse(content) : undefined;
+  },
+};
+
+const agent = new AgentRuntime({
+  modelClient,
+  sessionId: "local-session",
+  sessionStore,
+});
+
+await agent.run("查看当前目录");
+await agent.saveSession();
+
+const nextAgent = new AgentRuntime({ modelClient, sessionId: "local-session", sessionStore });
+await nextAgent.loadSession();
+```
+
+Runtime 不会隐式保存会话；快照要求消息可 JSON 序列化，并校验 `tool_call` / `tool_result` 配对。
 
 `run()` 的输入可以是纯文本、内部内容块、输入描述符，或者它们组成的数组：
 
@@ -498,8 +561,7 @@ agent.on("tool_end", ({ name, input, output }) => {
 | `user_message` | 用户消息加入会话时 |
 | `assistant_message` | 模型消息加入会话时 |
 | `tool_message` | 工具结果消息加入会话时 |
-| `model_response` | 收到 ModelClient 规范化响应时 |
-| `model_usage` | 解析本次模型调用 token 用量后 |
+| `model_response` | 收到 ModelClient 规范化响应及其 usage 时 |
 | `text` | 最终响应中的文本合并后触发 |
 | `text_delta` | 内置协议 client 解析到流式文本增量时触发 |
 | `tool_start` | terminal 工具开始执行前 |
@@ -617,17 +679,15 @@ agent.on("text_delta", ({ delta }) => {
 
 每个内置 ModelClient 都会把协议返回的 usage 归一化到 `ModelUsage`：
 
-- `Anthropic`：读取 `input_tokens`、`output_tokens`、cache read/create tokens，并计算 `totalTokens`。
+- `Anthropic`：把 `input_tokens` 与 cache read/create tokens 合并为总输入 `inputTokens`，读取 `output_tokens`，并计算 `totalTokens`。
 - `OpenAIChat`：读取 `prompt_tokens`、`completion_tokens`、`total_tokens`、cached prompt tokens 和 reasoning tokens。
 - `OpenAIResponses`：读取 `input_tokens`、`output_tokens`、`total_tokens`、cached input tokens 和 reasoning tokens。
 
-Runtime 会把每次调用的 usage 累加到 `agent.usage`，并在每次响应后发出 `model_usage` 事件：
+Runtime 不单独广播 usage；`model_response.usage` 就是本次调用量。应用层可以自行累计或只展示最近一次：
 
 ```ts
-console.log(agent.usage.inputTokens, agent.usage.outputTokens, agent.usage.totalTokens);
-
-agent.on("model_usage", ({ usage, totalUsage }) => {
-  console.log(usage, totalUsage);
+agent.on("model_response", ({ response }) => {
+  console.log(response.usage);
 });
 ```
 
@@ -646,8 +706,10 @@ src/
 │   ├── context.ts        # 确定性上下文 fallback 和压力估算
 │   ├── events.ts         # 事件系统
 │   ├── extension.ts      # Runtime 外部扩展点
+│   ├── logging.ts        # JSONL 日志扩展
 │   ├── messages.ts       # 内部消息/block 格式
 │   ├── model-client.ts      # 通用 ModelClient 接口
+│   ├── session.ts       # 会话快照和存储协议
 │   ├── terminal.ts       # bash terminal 工具
 │   └── index.ts
 ├── clients/

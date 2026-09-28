@@ -1,4 +1,4 @@
-import { createTerminalTool, runPty } from "./terminal.js";
+import { createTerminalTool, runPty, runShell } from "./terminal.js";
 import type {
   AgentContentBlock,
   AgentMessage,
@@ -11,11 +11,6 @@ import type {
   ModelClient,
   ModelRequest,
   ModelResponse,
-} from "./model-client.js";
-import {
-  addModelUsage,
-  createModelUsageSummary,
-  type ModelUsageSummary,
 } from "./model-client.js";
 import { EventBus, type AgentEventMap, type EventListener } from "./events.js";
 import type { AgentExtension } from "./extension.js";
@@ -33,6 +28,12 @@ import {
   type UserInputAdapterOptions,
   type UserInputResolver,
 } from "./user-input.js";
+import {
+  assertRuntimeSessionSnapshot,
+  cloneSessionMessages,
+  type RuntimeSessionSnapshot,
+  type RuntimeSessionStore,
+} from "./session.js";
 
 export type ToolHandler = (
   input: Record<string, unknown>,
@@ -46,38 +47,44 @@ export type AgentRuntimeOptions = {
   system?: string;
   extensions?: ReadonlyArray<AgentExtension>;
   input?: UserInputResolver | UserInputAdapterOptions;
+  sessionId?: string;
+  sessionStore?: RuntimeSessionStore;
 };
 
 class AgentRuntime {
   #controller: AbortController | null = null;
   #running = false;
   #events = new EventBus<AgentEventMap>();
-  #usage = createModelUsageSummary();
-
   readonly modelClient: ModelClient;
   readonly system: string;
   readonly extensions: ReadonlyArray<AgentExtension>;
   readonly input: UserInputResolver;
+  #sessionId?: string;
+  readonly sessionStore?: RuntimeSessionStore;
   readonly tools: Array<ToolDefinition> = [createTerminalTool()];
   readonly toolHandlers: ToolHandlers = {
-    bash: (input, { signal }) => runPty({
-      command: String(input.command),
-      cwd: typeof input.cwd === "string" ? input.cwd : undefined,
-      timeout: typeof input.timeout === "number" ? input.timeout : undefined,
-      signal,
-    }),
+    bash: async (input, { signal }) => {
+      const command = typeof input.command === "string" ? input.command : undefined;
+      const cwd = typeof input.cwd === "string" ? input.cwd : undefined;
+      const timeout = typeof input.timeout === "number" ? input.timeout : undefined;
+      const idleTimeout = typeof input.idleTimeout === "number" ? input.idleTimeout : undefined;
+      const tty = input.tty === true;
+
+      if (!command) throw new Error("command is required");
+      return tty
+        ? runPty({ command, cwd, timeout, idleTimeout, signal })
+        : runShell({ command, cwd, timeout, idleTimeout, signal });
+    },
   };
   messages: Array<AgentMessage> = [];
-
-  get usage(): ModelUsageSummary {
-    return this.#usage;
-  }
 
   constructor({
     modelClient,
     system = "你是终端Agent,用bash工具执行命令来完成任务,用中文简洁回答。",
     extensions = [],
     input,
+    sessionId,
+    sessionStore,
   }: AgentRuntimeOptions) {
     if (!modelClient) {
       throw new Error("modelClient is required");
@@ -87,6 +94,12 @@ class AgentRuntime {
     this.system = system;
     this.extensions = extensions;
     this.input = isUserInputAdapter(input) ? input : createUserInputAdapter(input);
+    this.#sessionId = sessionId;
+    this.sessionStore = sessionStore;
+  }
+
+  get sessionId(): string | undefined {
+    return this.#sessionId;
   }
 
   on<K extends keyof AgentEventMap>(type: K, listener: EventListener<AgentEventMap[K]>): () => void {
@@ -107,6 +120,50 @@ class AgentRuntime {
 
   abort(reason?: unknown): void {
     this.#controller?.abort(reason);
+  }
+
+  snapshot(): RuntimeSessionSnapshot {
+    this.#assertIdle("snapshot");
+    return {
+      version: 1,
+      messages: cloneSessionMessages(this.messages),
+    };
+  }
+
+  restore(snapshot: RuntimeSessionSnapshot): void {
+    this.#assertIdle("restore");
+    assertRuntimeSessionSnapshot(snapshot);
+    this.messages = cloneSessionMessages(snapshot.messages);
+  }
+
+  async saveSession(sessionId: string = this.sessionId ?? ""): Promise<void> {
+    if (!this.sessionStore) {
+      throw new Error("sessionStore is required to save a session");
+    }
+    if (!sessionId) {
+      throw new Error("sessionId is required to save a session");
+    }
+
+    await this.sessionStore.save(sessionId, this.snapshot());
+  }
+
+  async loadSession(sessionId: string = this.sessionId ?? ""): Promise<boolean> {
+    if (!this.sessionStore) {
+      throw new Error("sessionStore is required to load a session");
+    }
+    if (!sessionId) {
+      throw new Error("sessionId is required to load a session");
+    }
+
+    this.#assertIdle("load");
+    const snapshot = await this.sessionStore.load(sessionId);
+    if (snapshot) {
+      this.restore(snapshot);
+    } else {
+      this.messages = [];
+    }
+    this.#sessionId = sessionId;
+    return Boolean(snapshot);
   }
 
   async run(input: UserInput): Promise<ModelResponse> {
@@ -173,11 +230,6 @@ class AgentRuntime {
       const assistantMessage = createAssistantMessage(response.content);
       this.messages.push(assistantMessage);
       this.#events.emit("model_response", { response });
-      this.#usage = addModelUsage(this.#usage, response.usage);
-      this.#events.emit("model_usage", {
-        usage: response.usage ?? {},
-        totalUsage: this.#usage,
-      });
       this.#events.emit("message", { message: assistantMessage });
       this.#events.emit("assistant_message", { message: assistantMessage });
 
@@ -323,7 +375,12 @@ class AgentRuntime {
       throw new Error("cannot reset while agent is running");
     }
     this.messages = [];
-    this.#usage = createModelUsageSummary();
+  }
+
+  #assertIdle(action: string): void {
+    if (this.#running) {
+      throw new Error(`cannot ${action} session while agent is running`);
+    }
   }
 }
 

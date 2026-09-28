@@ -7,8 +7,7 @@ describe("TUI CLI", () => {
       .toMatchObject({
         protocol: "anthropic",
         model: "claude-test",
-        maxTokens: 8_192,
-        retryAttempts: 2,
+        allowLocalFiles: false,
       });
   });
 
@@ -17,19 +16,15 @@ describe("TUI CLI", () => {
       "--protocol", "openai-responses",
       "--model", "gpt-test",
       "--base-url", "https://example.test/v1",
-      "--max-tokens", "128",
-      "--timeout-ms", "5000",
-      "--retry-attempts", "0",
-      "--allow-local-files",
+      "--context-window-tokens", "131072",
     ])).toEqual({
       protocol: "openai-responses",
       model: "gpt-test",
       baseURL: "https://example.test/v1",
       apiKey: undefined,
-      maxTokens: 128,
-      timeoutMs: 5_000,
-      retryAttempts: 0,
-      allowLocalFiles: true,
+      allowLocalFiles: false,
+      contextWindowTokens: 131_072,
+      sessionId: undefined,
       help: false,
     });
   });
@@ -39,26 +34,32 @@ describe("TUI CLI", () => {
       protocol: "openai-responses",
       model: "gpt-config",
       apiKey: "config-key",
-      maxTokens: 256,
-      timeoutMs: 3_000,
-      retryAttempts: 4,
       allowLocalFiles: true,
+      contextWindowTokens: undefined,
+      sessionId: "from-config",
     })).toEqual({
       protocol: "openai-responses",
       model: "gpt-config",
       baseURL: undefined,
       apiKey: "config-key",
-      maxTokens: 256,
-      timeoutMs: 3_000,
-      retryAttempts: 4,
       allowLocalFiles: true,
+      contextWindowTokens: undefined,
+      sessionId: "from-config",
       help: false,
     });
+  });
+
+  it("parses and validates a session id", () => {
+    expect(parseTuiArgs(["--session-id", "work-1", "--model", "gpt-test"]).sessionId).toBe("work-1");
+    expect(parseTuiArgs([], { OPENAI_MODEL: "gpt-test" }, { sessionId: "from-config" }).sessionId).toBe("from-config");
+    expect(() => parseTuiArgs(["--session-id", "../escape", "--model", "gpt-test"])).toThrow("session id");
   });
 
   it("rejects invalid options and renders help", () => {
     expect(() => parseTuiArgs(["--protocol", "ollama"])).toThrow("unknown protocol: ollama");
     expect(() => parseTuiArgs([], {})).toThrow("model is required");
+    expect(() => parseTuiArgs(["--max-tokens", "128"])).toThrow("unknown argument: --max-tokens");
+    expect(() => parseTuiArgs(["--context-window-tokens", "0"])).toThrow("context window tokens must be a positive integer");
     expect(formatTuiHelp()).toContain("mycoder TUI");
   });
 });

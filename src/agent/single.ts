@@ -8,7 +8,6 @@ import {
   type CompactionResult,
   type EventListener,
   type ModelClient,
-  type ModelUsageSummary,
   type ToolDefinition,
   type ToolHandlers,
 } from "../runtime/index.js";
@@ -40,10 +39,6 @@ export class SingleAgent implements Agent {
     return this.runtime.modelClient;
   }
 
-  get usage(): ModelUsageSummary {
-    return this.runtime.usage;
-  }
-
   get system(): string {
     return this.runtime.system;
   }
@@ -62,6 +57,10 @@ export class SingleAgent implements Agent {
 
   get messages(): Array<AgentMessage> {
     return this.runtime.messages;
+  }
+
+  get sessionId(): string | undefined {
+    return this.runtime.sessionId;
   }
 
   get running(): boolean {
@@ -107,6 +106,22 @@ export class SingleAgent implements Agent {
 
   reset(): void {
     this.runtime.reset();
+  }
+
+  snapshot(): ReturnType<AgentRuntime["snapshot"]> {
+    return this.runtime.snapshot();
+  }
+
+  restore(snapshot: Parameters<AgentRuntime["restore"]>[0]): void {
+    this.runtime.restore(snapshot);
+  }
+
+  async saveSession(sessionId?: string): Promise<void> {
+    await this.runtime.saveSession(sessionId);
+  }
+
+  async loadSession(sessionId?: string): Promise<boolean> {
+    return this.runtime.loadSession(sessionId);
   }
 }
 

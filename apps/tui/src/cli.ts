@@ -1,3 +1,7 @@
+import { isValidTuiSessionId } from "./session.js";
+
+export { isValidTuiSessionId };
+
 export type TuiProtocol = "anthropic" | "openai-chat" | "openai-responses";
 
 export type TuiConfig = {
@@ -5,10 +9,9 @@ export type TuiConfig = {
   model?: string;
   baseURL?: string;
   apiKey?: string;
-  maxTokens?: number;
-  timeoutMs?: number;
-  retryAttempts?: number;
   allowLocalFiles?: boolean;
+  contextWindowTokens?: number;
+  sessionId?: string;
 };
 
 export type TuiCliOptions = {
@@ -16,10 +19,9 @@ export type TuiCliOptions = {
   model: string;
   baseURL?: string;
   apiKey?: string;
-  maxTokens: number;
-  timeoutMs?: number;
-  retryAttempts: number;
   allowLocalFiles: boolean;
+  contextWindowTokens?: number;
+  sessionId?: string;
   help: boolean;
 };
 
@@ -33,10 +35,8 @@ export function parseTuiArgs(
   let protocol: TuiProtocol | undefined;
   let model: string | undefined;
   let baseURL: string | undefined;
-  let maxTokens: number | undefined;
-  let timeoutMs: number | undefined;
-  let retryAttempts: number | undefined;
-  let allowLocalFiles = false;
+  let contextWindowTokens: number | undefined;
+  let sessionId: string | undefined;
   let help = false;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -55,14 +55,18 @@ export function parseTuiArgs(
       model = value();
     } else if (argument === "--base-url") {
       baseURL = value();
-    } else if (argument === "--max-tokens") {
-      maxTokens = parsePositiveInteger(value(), "--max-tokens");
-    } else if (argument === "--timeout-ms") {
-      timeoutMs = parsePositiveInteger(value(), "--timeout-ms");
-    } else if (argument === "--retry-attempts") {
-      retryAttempts = parseNonNegativeInteger(value(), "--retry-attempts");
-    } else if (argument === "--allow-local-files") {
-      allowLocalFiles = true;
+    } else if (argument === "--context-window-tokens") {
+      const next = Number(value());
+      if (!Number.isInteger(next) || next <= 0) {
+        throw new Error("context window tokens must be a positive integer");
+      }
+      contextWindowTokens = next;
+    } else if (argument === "--session-id") {
+      const next = value();
+      if (!next || !isValidTuiSessionId(next)) {
+        throw new Error("session id must contain 1-128 letters, numbers, dots, underscores, or hyphens");
+      }
+      sessionId = next;
     } else {
       throw new Error(`unknown argument: ${argument}`);
     }
@@ -83,10 +87,9 @@ export function parseTuiArgs(
     model: selectedModel,
     baseURL: baseURL ?? config.baseURL,
     apiKey: config.apiKey,
-    maxTokens: maxTokens ?? config.maxTokens ?? 8_192,
-    timeoutMs: timeoutMs ?? config.timeoutMs,
-    retryAttempts: retryAttempts ?? config.retryAttempts ?? 2,
-    allowLocalFiles: allowLocalFiles || config.allowLocalFiles || false,
+    allowLocalFiles: config.allowLocalFiles ?? false,
+    contextWindowTokens: contextWindowTokens ?? config.contextWindowTokens,
+    sessionId: sessionId ?? config.sessionId,
     help,
   };
 }
@@ -101,15 +104,14 @@ export function formatTuiHelp(): string {
     "  --protocol <anthropic|openai-chat|openai-responses>",
     "  --model <model-id>",
     "  --base-url <url>",
-    "  --max-tokens <number>          Defaults to 8192",
-    "  --timeout-ms <number>          Defaults to 60000",
-    "  --retry-attempts <number>      Defaults to 2",
-    "  --allow-local-files            Enables reading local image/document input",
+    "  --context-window-tokens <tokens>",
+    "  --session-id <id>              Resume a session; defaults to a new session",
     "  -h, --help",
     "",
     "Commands:",
+    "  /sessions List and switch sessions",
     "  /help    Show commands",
-    "  /usage   Show cumulative token usage",
+    "  /usage   Show latest token usage",
     "  /reset   Reset conversation history and usage",
     "  /exit    Quit the TUI",
   ].join("\n");
@@ -117,20 +119,4 @@ export function formatTuiHelp(): string {
 
 function isProtocol(value: string | undefined): value is TuiProtocol {
   return PROTOCOLS.includes(value as TuiProtocol);
-}
-
-function parsePositiveInteger(value: string | undefined, name: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return parsed;
-}
-
-function parseNonNegativeInteger(value: string | undefined, name: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new Error(`${name} must be a non-negative integer`);
-  }
-  return parsed;
 }

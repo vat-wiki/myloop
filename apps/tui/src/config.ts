@@ -1,10 +1,16 @@
 import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { isValidTuiSessionId } from "./session.js";
 import type { TuiConfig, TuiProtocol } from "./cli.js";
 
 const PROTOCOLS: ReadonlyArray<TuiProtocol> = ["anthropic", "openai-chat", "openai-responses"];
 const AGENTS_DIRECTORY = ".agents";
 const CONFIG_FILENAME = "mycoder.json";
+const DEPRECATED_CONFIG_FIELDS = new Set([
+  "maxTokens",
+  "timeoutMs",
+  "retryAttempts",
+]);
 
 export type TuiConfigSources = {
   global?: string;
@@ -90,10 +96,9 @@ function validateTuiConfig(value: unknown): TuiConfig {
     "model",
     "baseURL",
     "apiKey",
-    "maxTokens",
-    "timeoutMs",
-    "retryAttempts",
     "allowLocalFiles",
+    "contextWindowTokens",
+    "sessionId",
   ]);
 
   const config: TuiConfig = {};
@@ -131,20 +136,26 @@ function validateTuiConfig(value: unknown): TuiConfig {
     config.apiKey = input.apiKey;
   }
 
-  if (input.maxTokens !== undefined) {
-    config.maxTokens = assertPositiveInteger(input.maxTokens, "config maxTokens");
-  }
-  if (input.timeoutMs !== undefined) {
-    config.timeoutMs = assertPositiveInteger(input.timeoutMs, "config timeoutMs");
-  }
-  if (input.retryAttempts !== undefined) {
-    config.retryAttempts = assertNonNegativeInteger(input.retryAttempts, "config retryAttempts");
-  }
   if (input.allowLocalFiles !== undefined) {
     if (typeof input.allowLocalFiles !== "boolean") {
       throw new Error("config allowLocalFiles must be a boolean");
     }
     config.allowLocalFiles = input.allowLocalFiles;
+  }
+
+  if (input.contextWindowTokens !== undefined) {
+    if (typeof input.contextWindowTokens !== "number" || !Number.isInteger(input.contextWindowTokens) || input.contextWindowTokens <= 0) {
+      throw new Error("config contextWindowTokens must be a positive integer");
+    }
+    config.contextWindowTokens = input.contextWindowTokens;
+  }
+
+  if (input.sessionId !== undefined) {
+    assertString(input.sessionId, "config sessionId");
+    if (!isValidTuiSessionId(input.sessionId)) {
+      throw new Error("config sessionId must contain 1-128 letters, numbers, dots, underscores, or hyphens");
+    }
+    config.sessionId = input.sessionId;
   }
 
   return config;
@@ -167,7 +178,8 @@ function assertAllowedFields(
   value: Record<string, unknown>,
   allowedFields: ReadonlyArray<string>,
 ): void {
-  const unknownField = Object.keys(value).find((field) => !allowedFields.includes(field));
+  const allowed = new Set(allowedFields);
+  const unknownField = Object.keys(value).find((field) => !allowed.has(field) && !DEPRECATED_CONFIG_FIELDS.has(field));
   if (unknownField !== undefined) {
     throw new Error(`config has unknown field: ${unknownField}`);
   }
@@ -177,18 +189,4 @@ function assertString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string") {
     throw new Error(`${name} must be a string`);
   }
-}
-
-function assertPositiveInteger(value: unknown, name: string): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return value;
-}
-
-function assertNonNegativeInteger(value: unknown, name: string): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-    throw new Error(`${name} must be a non-negative integer`);
-  }
-  return value;
 }

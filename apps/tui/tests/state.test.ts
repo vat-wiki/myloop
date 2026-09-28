@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   errorText,
   formatTuiHelp,
+  getTuiCommandSuggestions,
   stringifyResult,
   stripControlCharacters,
 } from "../src/state.js";
@@ -24,8 +25,23 @@ describe("TUI state", () => {
 
   it("formats TUI help", () => {
     expect(formatTuiHelp()).toContain("/help");
+    expect(formatTuiHelp()).toContain("/sessions");
     expect(formatTuiHelp()).toContain("/usage");
     expect(formatTuiHelp()).toContain("/reset");
     expect(formatTuiHelp()).toContain("/exit");
+  });
+
+  it("suggests commands while input starts with a slash", () => {
+    expect(getTuiCommandSuggestions("/").map(({ command }) => command)).toEqual([
+      "/sessions",
+      "/help",
+      "/usage",
+      "/reset",
+      "/exit",
+      "/quit",
+    ]);
+    expect(getTuiCommandSuggestions("/u").map(({ command }) => command)).toEqual(["/usage"]);
+    expect(getTuiCommandSuggestions("/usage extra")).toEqual([]);
+    expect(getTuiCommandSuggestions("task /u")).toEqual([]);
   });
 });

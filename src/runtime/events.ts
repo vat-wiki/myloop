@@ -1,5 +1,5 @@
 import type { AgentMessage } from "./messages.js";
-import type { ModelResponse, ModelUsage, ModelUsageSummary } from "./model-client.js";
+import type { ModelResponse } from "./model-client.js";
 import type { ContextPressure } from "./context.js";
 
 export type EventListener<T> = (event: T) => void;
@@ -10,7 +10,6 @@ export type AgentEventMap = {
   assistant_message: { message: AgentMessage };
   tool_message: { message: AgentMessage };
   model_response: { response: ModelResponse };
-  model_usage: { usage: ModelUsage; totalUsage: ModelUsageSummary };
   text: { text: string };
   text_delta: { delta: string };
   tool_start: { id: string; name: string; input: Record<string, unknown> };

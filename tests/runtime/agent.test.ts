@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentRuntime } from "../../src/runtime/agent.js";
 import { createInMemoryArtifactStore } from "../../src/runtime/artifacts.js";
-import { textBlock, toolCallBlock } from "../../src/runtime/messages.js";
-import type { ModelClient, ModelResponse } from "../../src/runtime/model-client.js";
+import { textBlock, toolCallBlock, toolResultBlock } from "../../src/runtime/messages.js";
+import type { ModelClient, ModelRequest, ModelResponse } from "../../src/runtime/model-client.js";
 import type { AgentEventMap } from "../../src/runtime/events.js";
+import type { RuntimeSessionStore } from "../../src/runtime/session.js";
 
 function response(
   content: ModelResponse["content"],
@@ -69,7 +70,7 @@ describe("Agent", () => {
       .mockResolvedValueOnce(response(
         [textBlock("finished")],
         "end",
-        { inputTokens: 20, outputTokens: 4, cacheReadInputTokens: 5 },
+        { inputTokens: 25, outputTokens: 4, cacheReadInputTokens: 5 },
       ));
     const handler = vi.fn(async () => ({ stdout: "/home/dev/mycoder" }));
     const wrapToolCall = vi.fn(() => handler);
@@ -79,8 +80,8 @@ describe("Agent", () => {
     });
     const events: Array<keyof AgentEventMap> = [];
     agent.on("message", () => events.push("message"));
-    const usageEvents: Array<AgentEventMap["model_usage"]> = [];
-    agent.on("model_usage", (event) => usageEvents.push(event));
+    const responseEvents: Array<AgentEventMap["model_response"]> = [];
+    agent.on("model_response", (event) => responseEvents.push(event));
     agent.on("tool_start", () => events.push("tool_start"));
     agent.on("tool_end", () => events.push("tool_end"));
 
@@ -105,16 +106,11 @@ describe("Agent", () => {
       }],
     });
     expect(events).toEqual(["message", "message", "tool_start", "tool_end", "message", "message"]);
-    expect(usageEvents[1]?.totalUsage).toEqual({
-      requests: 2,
-      inputTokens: 30,
-      outputTokens: 6,
-      totalTokens: 36,
+    expect(responseEvents[1]?.response.usage).toEqual({
+      inputTokens: 25,
+      outputTokens: 4,
       cacheReadInputTokens: 5,
-      cacheCreationInputTokens: 0,
-      reasoningOutputTokens: 0,
     });
-    expect(agent.usage).toEqual(usageEvents[1]?.totalUsage);
   });
 
   it("returns an error result for unknown tools", async () => {
@@ -175,5 +171,113 @@ describe("Agent", () => {
 
     expect(agent.messages).toEqual([]);
     expect(agent.running).toBe(false);
+  });
+
+  it("snapshots and restores resumable history", async () => {
+    const firstClient = createModelClient(async () => response([textBlock("done")]));
+    const firstAgent = new AgentRuntime({ modelClient: firstClient });
+    await firstAgent.run("hello");
+
+    const snapshot = firstAgent.snapshot();
+    expect(snapshot.version).toBe(1);
+    expect(snapshot.messages).toHaveLength(2);
+
+    const mutatedSnapshot = structuredClone(snapshot);
+    mutatedSnapshot.messages[0]!.content[0] = textBlock("mutated");
+    expect(firstAgent.messages[0]?.content[0]).toEqual(textBlock("hello"));
+
+    let restoredRequestMessages: ModelRequest["messages"] = [];
+    const restoredClient = createModelClient(async (request) => {
+      restoredRequestMessages = structuredClone(request.messages);
+      return response([textBlock("continued")]);
+    });
+    const restoredAgent = new AgentRuntime({ modelClient: restoredClient });
+    restoredAgent.restore(snapshot);
+
+    await restoredAgent.run("continue");
+
+    expect(restoredRequestMessages).toHaveLength(3);
+    expect(restoredRequestMessages[0]?.content[0]).toEqual(textBlock("hello"));
+  });
+
+  it("rejects invalid or unpaired session snapshots", () => {
+    const agent = new AgentRuntime({ modelClient: createModelClient(async () => response([])) });
+
+    expect(() => agent.restore({
+      version: 2,
+      messages: [],
+    })).toThrow("unsupported session snapshot version");
+    expect(() => agent.restore({
+      version: 1,
+      messages: [{
+        role: "assistant",
+        content: [toolCallBlock("call-1", "bash", { command: "pwd" })],
+      }],
+    })).toThrow("session snapshot has a tool call without a tool result");
+    expect(() => agent.restore({
+      version: 1,
+      messages: [{
+        role: "tool",
+        content: [toolResultBlock("call-1", "done")],
+      }],
+    })).toThrow("session snapshot has a tool result without a tool call");
+  });
+
+  it("saves and loads sessions through an injected store", async () => {
+    const firstClient = createModelClient(async () => response([textBlock("done")]));
+    const savedSnapshots: Array<Parameters<RuntimeSessionStore["save"]>[1]> = [];
+    const sessionStore: RuntimeSessionStore = {
+      save: async (_sessionId, snapshot) => {
+        savedSnapshots.push(snapshot);
+      },
+      load: async () => savedSnapshots[0],
+    };
+    const firstAgent = new AgentRuntime({
+      modelClient: firstClient,
+      sessionId: "session-1",
+      sessionStore,
+    });
+    await firstAgent.run("hello");
+    await firstAgent.saveSession();
+
+    expect(savedSnapshots[0]?.messages).toHaveLength(2);
+
+    const secondAgent = new AgentRuntime({
+      modelClient: createModelClient(async () => response([textBlock("next")])),
+      sessionId: "session-1",
+      sessionStore,
+    });
+    await expect(secondAgent.loadSession()).resolves.toBe(true);
+    expect(secondAgent.messages).toEqual(firstAgent.snapshot().messages);
+  });
+
+  it("switches the current session when loading an explicit id", async () => {
+    const saved: Array<{ sessionId: string; messageCount: number }> = [];
+    const snapshots = new Map<string, Parameters<RuntimeSessionStore["save"]>[1]>();
+    const sessionStore: RuntimeSessionStore = {
+      save: async (sessionId, snapshot) => {
+        saved.push({ sessionId, messageCount: snapshot.messages.length });
+        snapshots.set(sessionId, snapshot);
+      },
+      load: async (sessionId) => snapshots.get(sessionId),
+    };
+    const agent = new AgentRuntime({
+      modelClient: createModelClient(async () => response([textBlock("first")])),
+      sessionId: "session-1",
+      sessionStore,
+    });
+
+    await agent.run("first");
+    await agent.saveSession();
+    await expect(agent.loadSession("session-2")).resolves.toBe(false);
+    expect(agent.sessionId).toBe("session-2");
+
+    await agent.run("second");
+    await agent.saveSession();
+
+    expect(saved).toEqual([
+      { sessionId: "session-1", messageCount: 2 },
+      { sessionId: "session-2", messageCount: 2 },
+    ]);
   });
 });

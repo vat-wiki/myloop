@@ -31,6 +31,7 @@ type AnthropicOptions = {
   baseURL?: string;
   model: string;
   maxTokens?: number;
+  contextWindowTokens?: number;
   artifactStore?: ArtifactStore;
   headers?: Record<string, string>;
 } & Omit<FetchTransportOptions, "fetch"> & {
@@ -76,6 +77,18 @@ type AnthropicBinarySource =
   | { type: "url"; url: string }
   | { type: "base64"; media_type: string; data: string };
 
+type AnthropicUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
+};
+
 type AnthropicResponse = {
   stop_reason?: string;
   content?: Array<{
@@ -85,27 +98,14 @@ type AnthropicResponse = {
     name?: string;
     input?: unknown;
   }>;
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
-    total_tokens?: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-    cache_creation?: {
-      ephemeral_5m_input_tokens?: number;
-      ephemeral_1h_input_tokens?: number;
-    };
-  };
+  usage?: AnthropicUsage;
 };
 
 type AnthropicSseEvent = {
   type?: string;
   index?: number;
   message?: {
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-    };
+    usage?: AnthropicUsage;
   };
   content_block?: {
     type?: string;
@@ -118,10 +118,7 @@ type AnthropicSseEvent = {
     partial_json?: string;
     stop_reason?: string;
   };
-  usage?: {
-    input_tokens?: number;
-    output_tokens?: number;
-  };
+  usage?: AnthropicUsage;
   error?: {
     message?: string;
   };
@@ -135,7 +132,15 @@ class Anthropic {
 
   readonly #options: AnthropicOptions;
 
-  constructor({ apiKey, baseURL, model, maxTokens = 8192, artifactStore, ...httpOptions }: AnthropicOptions) {
+  constructor({
+    apiKey,
+    baseURL,
+    model,
+    maxTokens = 8192,
+    contextWindowTokens,
+    artifactStore,
+    ...httpOptions
+  }: AnthropicOptions) {
     if (!model) {
       throw new Error("model is required");
     }
@@ -145,7 +150,7 @@ class Anthropic {
     this.maxTokens = maxTokens;
     this.#artifactStore = artifactStore;
     this.context = {
-      contextWindowTokens: 200_000,
+      contextWindowTokens: contextWindowTokens ?? 200_000,
       reservedOutputTokens: maxTokens,
       safetyTokens: 20_000,
       estimateRequestTokens(request: ModelRequest): number {
@@ -197,23 +202,17 @@ class Anthropic {
       usage?.cache_creation?.ephemeral_5m_input_tokens,
       usage?.cache_creation?.ephemeral_1h_input_tokens,
     );
+    const inputTokens = sumTokenCounts(
+      usage?.input_tokens,
+      usage?.cache_read_input_tokens,
+      cacheCreationInputTokens,
+    );
     return {
       stopReason,
       content: (response.content ?? [])
         .filter((block) => block.type !== "thinking" && block.type !== "redacted_thinking")
         .map(toInternalBlock),
-      usage: {
-        inputTokens: usage?.input_tokens,
-        outputTokens: usage?.output_tokens,
-        totalTokens: usage?.total_tokens ?? sumTokenCounts(
-          usage?.input_tokens,
-          usage?.output_tokens,
-          usage?.cache_read_input_tokens,
-          cacheCreationInputTokens,
-        ),
-        cacheReadInputTokens: usage?.cache_read_input_tokens,
-        cacheCreationInputTokens,
-      },
+      usage: normalizeAnthropicUsage(usage),
     };
   }
 
@@ -235,8 +234,7 @@ class Anthropic {
     const response: AnthropicResponse = {};
     const content: NonNullable<AnthropicResponse["content"]> = [];
     const toolArguments = new Map<number, string>();
-    const inputTokens: Array<number | undefined> = [];
-    const outputTokens: Array<number | undefined> = [];
+    const usageFragments: Array<AnthropicUsage> = [];
 
     await postSse({
       url: `${baseURL}/messages`,
@@ -252,8 +250,7 @@ class Anthropic {
         const parsed = JSON.parse(event.data) as AnthropicSseEvent;
 
         if (parsed.type === "message_start") {
-          inputTokens.push(parsed.message?.usage?.input_tokens);
-          outputTokens.push(parsed.message?.usage?.output_tokens);
+          usageFragments.push(parsed.message?.usage ?? {});
           return;
         }
         if (parsed.type === "content_block_start") {
@@ -295,8 +292,7 @@ class Anthropic {
           if (parsed.delta?.stop_reason) {
             response.stop_reason = parsed.delta.stop_reason;
           }
-          inputTokens.push(parsed.usage?.input_tokens);
-          outputTokens.push(parsed.usage?.output_tokens);
+          usageFragments.push(parsed.usage ?? {});
           return;
         }
         if (parsed.type === "error") {
@@ -306,13 +302,33 @@ class Anthropic {
     });
 
     response.content = content;
-    response.usage = {
-      ...(response.usage ?? {}),
-      input_tokens: [...inputTokens].reverse().find((value) => value !== undefined),
-      output_tokens: [...outputTokens].reverse().find((value) => value !== undefined),
-    };
+    response.usage = usageFragments.reduce<AnthropicUsage>((usage, fragment) => ({
+      ...usage,
+      ...fragment,
+    }), {});
     return response;
   }
+}
+
+function normalizeAnthropicUsage(usage?: AnthropicUsage): ModelResponse["usage"] {
+  const cacheCreationInputTokens = sumTokenCounts(
+    usage?.cache_creation_input_tokens,
+    usage?.cache_creation?.ephemeral_5m_input_tokens,
+    usage?.cache_creation?.ephemeral_1h_input_tokens,
+  );
+  const inputTokens = sumTokenCounts(
+    usage?.input_tokens,
+    usage?.cache_read_input_tokens,
+    cacheCreationInputTokens,
+  );
+
+  return {
+    inputTokens,
+    outputTokens: usage?.output_tokens,
+    totalTokens: usage?.total_tokens ?? sumTokenCounts(inputTokens, usage?.output_tokens),
+    cacheReadInputTokens: usage?.cache_read_input_tokens,
+    cacheCreationInputTokens,
+  };
 }
 
 function toAnthropicTool(tool: ToolDefinition): AnthropicTool {

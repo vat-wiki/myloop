@@ -127,7 +127,7 @@ describe("Anthropic", () => {
         toolCallBlock("call-1", "bash", { command: "pwd" }),
       ],
       usage: {
-        inputTokens: 11,
+        inputTokens: 18,
         outputTokens: 7,
         totalTokens: 25,
         cacheReadInputTokens: 3,
@@ -179,7 +179,7 @@ describe("Anthropic", () => {
 
   it("streams Anthropic text and tool arguments", async () => {
     const fetch = vi.fn<typeof fetch>().mockResolvedValue(sseResponse([
-      'data: {"type":"message_start","message":{"usage":{"input_tokens":3}}}\n\n',
+      'data: {"type":"message_start","message":{"usage":{"input_tokens":3,"cache_read_input_tokens":2,"cache_creation_input_tokens":4}}}\n\n',
       'data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}\n\n',
       'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}\n\n',
       'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}\n\n',
@@ -211,7 +211,13 @@ describe("Anthropic", () => {
       textBlock("Hello"),
       toolCallBlock("call-1", "bash", { command: "pwd" }),
     ]);
-    expect(result.usage).toMatchObject({ inputTokens: 3, outputTokens: 7 });
+    expect(result.usage).toMatchObject({
+      inputTokens: 9,
+      outputTokens: 7,
+      totalTokens: 16,
+      cacheReadInputTokens: 2,
+      cacheCreationInputTokens: 4,
+    });
     expect(JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1]?.body)).stream).toBe(true);
   });
 

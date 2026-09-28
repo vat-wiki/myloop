@@ -37,6 +37,8 @@ No formatter or linter is configured. Run `npm run typecheck` before submitting 
 
 Vitest is the test framework. Place tests under `tests/` using `<module>.test.ts` or `<component>.test.ts`, mirroring the source path when practical. Cover runtime state transitions, extension ordering, client request/response mapping, input validation, and context-compaction invariants. Run focused tests during iteration and the full `npm test` suite before submitting.
 
+Before finishing a feature, verify the user-facing behavior in tmux with a real multi-turn session when applicable.
+
 ## Commit & Pull Request Guidelines
 
 No repository Git history is available in this workspace, so no established commit convention can be verified. Use concise, imperative commit subjects such as `Add input validation` or `Fix context compaction`.

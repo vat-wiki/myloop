@@ -11,6 +11,7 @@ export type OpenAIClientOptions = {
   baseURL?: string;
   model: string;
   maxTokens?: number;
+  contextWindowTokens?: number;
   headers?: Record<string, string>;
   artifactStore?: ArtifactStore;
   fetch?: typeof fetch;

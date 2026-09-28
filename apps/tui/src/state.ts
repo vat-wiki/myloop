@@ -1,5 +1,25 @@
 export function formatTuiHelp(): string {
-  return "Commands: /help, /usage, /reset, /exit";
+  return "Commands: /sessions, /help, /usage, /reset, /exit · Enter runs selection · Tab completes · ESC interrupts";
+}
+
+export type TuiCommand = {
+  command: string;
+  description: string;
+};
+
+export const tuiCommands: readonly TuiCommand[] = [
+  { command: "/sessions", description: "List and switch sessions" },
+  { command: "/help", description: "Show help" },
+  { command: "/usage", description: "Show latest model usage" },
+  { command: "/reset", description: "Clear conversation" },
+  { command: "/exit", description: "Exit mycoder" },
+  { command: "/quit", description: "Exit mycoder" },
+] as const;
+
+export function getTuiCommandSuggestions(value: string): TuiCommand[] {
+  const query = value.trim();
+  if (!query.startsWith("/") || /\s/.test(query)) return [];
+  return tuiCommands.filter(({ command }) => command.startsWith(query));
 }
 
 export function stripControlCharacters(value: string): string {
