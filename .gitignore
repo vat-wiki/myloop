@@ -2,3 +2,5 @@ node_modules/
 dist/
 config.json
 .agents/mycoder.json
+.agents/mycoder/logs/
+.agents/mycoder/sessions/
