@@ -31,6 +31,23 @@ describe("runShell", () => {
     expect(output).toContain("stderr:\nerror");
   });
 
+  it("honors a shell override", async () => {
+    const previousShell = process.env.MYCODER_SHELL;
+    process.env.MYCODER_SHELL = "/bin/sh";
+
+    try {
+      const output = await runShell({
+        command: "ps -p $$ -o comm=; true",
+        timeout: 1_000,
+      });
+
+      expect(output).toContain("sh");
+    } finally {
+      if (previousShell === undefined) delete process.env.MYCODER_SHELL;
+      else process.env.MYCODER_SHELL = previousShell;
+    }
+  });
+
   it("returns partial output after the idle timeout", async () => {
     const output = await runShell({
       command: "echo before-idle; sleep 10",

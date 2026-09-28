@@ -777,4 +777,31 @@ describe("TUI visual verification", () => {
     expect(run).not.toHaveBeenCalled();
     expect(setup.captureCharFrame()).toContain("pasted text");
   });
+
+  it("pastes clipboard text into the input with Ctrl+V", async () => {
+    const agent = createAgentStub();
+    let pasteClipboard: (() => Promise<boolean>) | undefined;
+    const readClipboard = vi.fn().mockResolvedValue("clipboard text\nwith newline\n");
+    const setup = await testRender(
+      () => TuiApp({
+        agent,
+        protocol: "test",
+        model: "test-model",
+        onExit: () => {},
+        registerPasteClipboard: (handler) => {
+          pasteClipboard = handler;
+        },
+        readClipboard,
+      }),
+      { width: 80, height: 20 },
+    );
+    disposers.push(async () => setup.renderer.destroy());
+    await setup.renderOnce();
+
+    await expect(pasteClipboard?.()).resolves.toBe(true);
+    await setup.flush();
+
+    expect(readClipboard).toHaveBeenCalled();
+    expect(setup.captureCharFrame()).toContain("clipboard text");
+  });
 });

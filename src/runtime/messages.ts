@@ -10,6 +10,11 @@ export type TextBlock = {
   text: string;
 };
 
+export type ThinkingBlock = {
+  type: "thinking";
+  thinking: string;
+};
+
 export type BinarySource =
   | { type: "url"; url: string }
   | { type: "artifact"; artifactId: string }
@@ -62,6 +67,7 @@ export type ToolResultBlock = {
 export type UserContentBlock = TextBlock | ImageBlock | DocumentBlock | VideoBlock;
 export type AgentContentBlock =
   | TextBlock
+  | ThinkingBlock
   | ImageBlock
   | DocumentBlock
   | VideoBlock
@@ -74,7 +80,7 @@ export type AgentMessage = {
   content: Array<AgentContentBlock>;
 };
 
-export type StopReason = "end" | "tool_call";
+export type StopReason = "end" | "tool_call" | "max_tokens";
 
 export type ToolDefinition = {
   name: string;
@@ -84,6 +90,10 @@ export type ToolDefinition = {
 
 export function textBlock(text: string): TextBlock {
   return { type: "text", text };
+}
+
+export function thinkingBlock(thinking: string): ThinkingBlock {
+  return { type: "thinking", thinking };
 }
 
 export function imageBlock(

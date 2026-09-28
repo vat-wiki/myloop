@@ -35,6 +35,7 @@ export async function runTuiApp({
   let completeCommand: (() => boolean) | undefined;
   let selectCommand: ((direction: 1 | -1) => boolean) | undefined;
   let submitCommand: (() => boolean) | undefined;
+  let pasteClipboard: (() => Promise<boolean>) | undefined;
   try {
     renderer = await createCliRenderer({
       stdin: input,
@@ -54,6 +55,11 @@ export async function runTuiApp({
       if (event.ctrl && event.name === "u") {
         event.stopPropagation?.();
         clearInput?.();
+        return;
+      }
+      if (event.ctrl && event.name === "v") {
+        event.stopPropagation?.();
+        void pasteClipboard?.().catch(() => {});
         return;
       }
       if (event.name === "tab") {
@@ -114,6 +120,9 @@ export async function runTuiApp({
           }}
           registerSubmitCommand={(handler) => {
             submitCommand = handler;
+          }}
+          registerPasteClipboard={(handler) => {
+            pasteClipboard = handler;
           }}
         />
       ),

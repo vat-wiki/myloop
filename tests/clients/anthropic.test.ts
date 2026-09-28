@@ -6,6 +6,7 @@ import {
   documentBlock,
   imageBlock,
   textBlock,
+  thinkingBlock,
   toolCallBlock,
   toolResultBlock,
 } from "../../src/runtime/messages.js";
@@ -155,7 +156,7 @@ describe("Anthropic", () => {
     expect(transport).not.toHaveBeenCalled();
   });
 
-  it("ignores extended thinking response blocks", async () => {
+  it("maps extended thinking response blocks", async () => {
     const transport = vi.fn<Parameters<HttpTransport>, ReturnType<HttpTransport>>()
       .mockResolvedValue(httpJson({
         stop_reason: "end_turn",
@@ -174,7 +175,29 @@ describe("Anthropic", () => {
       messages: [{ role: "user", content: [textBlock("hello")] }],
     });
 
-    expect(result.content).toEqual([textBlock("Hello")]);
+    expect(result.content).toEqual([
+      thinkingBlock("internal reasoning"),
+      thinkingBlock("[thinking redacted by provider]"),
+      textBlock("Hello"),
+    ]);
+  });
+
+  it("maps max_tokens stop reason", async () => {
+    const transport = vi.fn<Parameters<HttpTransport>, ReturnType<HttpTransport>>()
+      .mockResolvedValue(httpJson({
+        stop_reason: "max_tokens",
+        content: [{ type: "text", text: "partial" }],
+        usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+      }));
+    const modelClient = new Anthropic({ model: "claude-test", transport });
+
+    const result = await modelClient.complete({
+      system: "system",
+      tools: [],
+      messages: [{ role: "user", content: [textBlock("hello")] }],
+    });
+
+    expect(result.stopReason).toBe("max_tokens");
   });
 
   it("streams Anthropic text and tool arguments", async () => {

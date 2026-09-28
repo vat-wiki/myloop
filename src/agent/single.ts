@@ -94,8 +94,12 @@ export class SingleAgent implements Agent {
 
   async run(input: UserInput): Promise<AgentResult> {
     const response = await this.runtime.run(input);
+    const answer = responseText(response.content);
+    if (!answer && response.stopReason === "max_tokens") {
+      throw new Error("model reached max_tokens before producing a text answer");
+    }
     return {
-      answer: responseText(response.content),
+      answer,
       response,
     };
   }

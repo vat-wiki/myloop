@@ -5,6 +5,7 @@ import type { SingleAgent } from "mycoder/agent";
 import type { AgentContentBlock, AgentMessage } from "mycoder/messages";
 import type { ContextPressure, RuntimeSessionStore } from "mycoder/runtime";
 import type { TuiLogger } from "./logging.js";
+import { readClipboardText } from "./clipboard.js";
 import {
   errorText,
   formatTuiHelp,
@@ -40,6 +41,8 @@ export type TuiAppProps = {
   registerCompleteCommand?: (completeCommand: () => boolean) => void;
   registerSelectCommand?: (selectCommand: (direction: 1 | -1) => boolean) => void;
   registerSubmitCommand?: (submitCommand: () => boolean) => void;
+  registerPasteClipboard?: (pasteClipboard: () => Promise<boolean>) => void;
+  readClipboard?: () => Promise<string>;
 };
 
 const zeroUsage: TuiUsage = {
@@ -60,6 +63,8 @@ export function TuiApp({
   registerCompleteCommand,
   registerSelectCommand,
   registerSubmitCommand,
+  registerPasteClipboard,
+  readClipboard = readClipboardText,
 }: TuiAppProps): JSX.Element {
   const initialTasks = createTasksFromMessages(agent.messages);
   const [sessionId, setSessionId] = createSignal(agent.sessionId ?? "default");
@@ -162,6 +167,15 @@ export function TuiApp({
     setSelectedCommandIndex(0);
     if (busy()) queueInput(command.command);
     else void submit(command.command);
+    return true;
+  });
+  registerPasteClipboard?.(async () => {
+    const text = stripControlCharacters(await readClipboard());
+    if (!text || !inputRef) return false;
+
+    inputRef.editBuffer.insertText(text);
+    setInputValue(inputRef.plainText ?? "");
+    setSelectedCommandIndex(0);
     return true;
   });
 
@@ -548,6 +562,7 @@ function WelcomeView(): JSX.Element {
       <text fg="#64748b">{[
         "Enter          Send message",
         "Shift+Enter    New line",
+        "Ctrl+V         Paste",
         "Esc            Interrupt agent",
         "Ctrl+C         Exit mycoder",
         "Ctrl+U         Clear input",

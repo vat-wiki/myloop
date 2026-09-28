@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentRuntime } from "../../src/runtime/agent.js";
 import { createInMemoryArtifactStore } from "../../src/runtime/artifacts.js";
-import { textBlock, toolCallBlock, toolResultBlock } from "../../src/runtime/messages.js";
+import { textBlock, thinkingBlock, toolCallBlock, toolResultBlock } from "../../src/runtime/messages.js";
 import type { ModelClient, ModelRequest, ModelResponse } from "../../src/runtime/model-client.js";
 import type { AgentEventMap } from "../../src/runtime/events.js";
 import type { RuntimeSessionStore } from "../../src/runtime/session.js";
@@ -40,6 +40,7 @@ describe("Agent", () => {
       ],
       tools: agent.tools,
       onTextDelta: expect.any(Function),
+      onThinkingDelta: expect.any(Function),
       signal: expect.any(AbortSignal),
     });
     expect(result).toEqual(response([textBlock("done")]));
@@ -60,6 +61,27 @@ describe("Agent", () => {
     await agent.run("hello");
 
     expect(deltas).toEqual(["Hel", "lo"]);
+  });
+
+  it("continues automatically after max_tokens", async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(response([textBlock("Hel")], "max_tokens"))
+      .mockResolvedValueOnce(response([textBlock("lo")], "end"));
+    const agent = new AgentRuntime({ modelClient: createModelClient(complete) });
+
+    const result = await agent.run("hello");
+
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0]?.messages.slice(0, 3)).toEqual([
+      { role: "user", content: [textBlock("hello")] },
+      { role: "assistant", content: [textBlock("Hel")] },
+      { role: "user", content: [textBlock(
+        "Continue from where the previous response stopped. Do not repeat content.",
+      )] },
+    ]);
+    expect(result.stopReason).toBe("end");
+    expect(result.content).toEqual([textBlock("Hello")]);
+    expect(agent.messages).toHaveLength(4);
   });
 
   it("executes wrapped tools and continues the modelClient loop", async () => {

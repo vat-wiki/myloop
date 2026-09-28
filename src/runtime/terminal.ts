@@ -1,13 +1,22 @@
 import os from "node:os";
 import process from "node:process";
-import { createRequire } from "node:module";
+import { basename, delimiter as pathDelimiter, join } from "node:path";
+import { access, constants } from "node:fs/promises";
 import { spawn as spawnProcess } from "node:child_process";
-import { spawn } from "node-pty";
 import type { IPty } from "node-pty";
 import type { ToolDefinition } from "./messages.js";
 
-const { Terminal } = createRequire(import.meta.url)("@xterm/headless") as typeof import("@xterm/headless");
-type HeadlessTerminal = InstanceType<typeof Terminal>;
+type PtyModule = typeof import("node-pty");
+type HeadlessTerminalModule = typeof import("@xterm/headless");
+type HeadlessTerminal = InstanceType<HeadlessTerminalModule["Terminal"]>;
+
+type ResolvedShell = {
+  command: string;
+  args: Array<string>;
+};
+
+let spawn: PtyModule["spawn"];
+let Terminal: HeadlessTerminalModule["Terminal"];
 
 export type RunPtyOptions = {
   command: string;
@@ -125,7 +134,7 @@ class ShellCommand {
   #forceKillTimer?: NodeJS.Timeout;
   #resolveExit?: () => void;
 
-  constructor(options: RunShellOptions) {
+  constructor(options: RunShellOptions & { shell: ResolvedShell }) {
     const hardTimeout = options.timeout ?? DEFAULT_HARD_TIMEOUT;
     const idleTimeout = options.idleTimeout ?? DEFAULT_IDLE_TIMEOUT;
     if (!Number.isInteger(hardTimeout) || hardTimeout <= 0) throw new Error("timeout must be a positive integer");
@@ -139,7 +148,7 @@ class ShellCommand {
     this.#exitPromise = new Promise<void>((resolve) => {
       this.#resolveExit = resolve;
     });
-    this.#child = spawnProcess(os.platform() === "win32" ? "cmd.exe" : "bash", ["-c", options.command], {
+    this.#child = spawnProcess(options.shell.command, options.shell.args, {
       cwd: options.cwd ?? process.cwd(),
       env: cleanEnv(),
       detached: os.platform() !== "win32",
@@ -269,7 +278,7 @@ class PtySession {
   #forceKillTimer?: NodeJS.Timeout;
   #resolveExit?: () => void;
 
-  constructor(options: RunPtyOptions) {
+  constructor(options: RunPtyOptions & { shell: ResolvedShell }) {
     const cols = DEFAULT_COLS;
     const rows = DEFAULT_ROWS;
     const hardTimeout = options.timeout ?? DEFAULT_HARD_TIMEOUT;
@@ -288,7 +297,7 @@ class PtySession {
       rows,
       scrollback: DEFAULT_SCROLLBACK,
     });
-    this.#pty = spawn(os.platform() === "win32" ? "cmd.exe" : "bash", ["-c", options.command], {
+    this.#pty = spawn(options.shell.command, options.shell.args, {
       name: "xterm-256color",
       cols,
       rows,
@@ -433,7 +442,13 @@ class PtySession {
 }
 
 export async function runPty(options: RunPtyOptions): Promise<string> {
-  const session = new PtySession(options);
+  const [ptyModule, headlessTerminalModule] = await Promise.all([
+    import("node-pty"),
+    import("@xterm/headless"),
+  ]);
+  spawn = ptyModule.spawn;
+  Terminal = headlessTerminalModule.Terminal;
+  const session = new PtySession({ ...options, shell: await resolveShell(options.command) });
   try {
     const snapshot = await session.wait();
     return formatTerminalSnapshot(snapshot);
@@ -443,12 +458,99 @@ export async function runPty(options: RunPtyOptions): Promise<string> {
 }
 
 export async function runShell(options: RunShellOptions): Promise<string> {
-  const command = new ShellCommand(options);
+  const command = new ShellCommand({ ...options, shell: await resolveShell(options.command) });
   try {
     const result = await command.wait();
     return formatCommandResult(result);
   } finally {
     command.dispose();
+  }
+}
+
+async function resolveShell(command: string): Promise<ResolvedShell> {
+  const override = process.env.MYCODER_SHELL?.trim();
+  if (override) {
+    const shellName = basename(override).toLowerCase();
+    const executable = override.includes("/") || override.includes("\\")
+      ? override
+      : await findExecutableInPath(override) ?? override;
+    return { command: executable, args: shellInvocationArgs(shellName, command) };
+  }
+
+  if (os.platform() === "win32") {
+    for (const filename of ["pwsh.exe", "powershell.exe"]) {
+      const powerShell = await findExecutableInPath(filename);
+      if (powerShell) {
+        return { command: powerShell, args: windowsPowerShellArgs(command) };
+      }
+    }
+
+    const comspec = process.env.ComSpec?.trim() || "cmd.exe";
+    return { command: comspec, args: ["/d", "/s", "/c", command] };
+  }
+
+  for (const shellName of ["bash", "sh"]) {
+    const candidates = [
+      `/bin/${shellName}`,
+      `/usr/bin/${shellName}`,
+      `/usr/local/bin/${shellName}`,
+      `/opt/homebrew/bin/${shellName}`,
+      await findExecutableInPath(shellName),
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate && await isExecutable(candidate)) {
+        return { command: candidate, args: ["-c", command] };
+      }
+    }
+  }
+
+  throw new Error("no compatible shell found: expected bash or sh");
+}
+
+function shellInvocationArgs(shellName: string, command: string): Array<string> {
+  if (shellName === "cmd" || shellName === "cmd.exe") return ["/d", "/s", "/c", command];
+  if (shellName === "powershell" || shellName === "powershell.exe" || shellName === "pwsh" || shellName === "pwsh.exe") {
+    return windowsPowerShellArgs(command);
+  }
+  return ["-c", command];
+}
+
+function windowsPowerShellArgs(command: string): Array<string> {
+  const encodedCommand = Buffer.from(command, "utf16le").toString("base64");
+  return [
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-EncodedCommand",
+    encodedCommand,
+  ];
+}
+
+async function findExecutableInPath(filename: string): Promise<string | undefined> {
+  const directories = (process.env.PATH ?? "")
+    .split(pathDelimiter)
+    .map((directory) => directory.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+
+  for (const directory of directories) {
+    const candidate = join(directory, filename);
+    if (await isExecutable(candidate)) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+async function isExecutable(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -476,7 +578,7 @@ export function formatTerminalSnapshot(snapshot: TerminalSnapshot): string {
 export function createTerminalTool(): ToolDefinition {
   return {
     name: "bash",
-    description: `一次性运行 shell 命令并等待退出；超时终止进程组并返回已收集输出。默认使用非 TTY 子进程，优先使用非交互模式或管道输入。仅当命令必须检测 TTY、渲染 TUI 或读取 /dev/tty 时设置 tty=true；长驻服务优先使用项目已有的进程管理方式，临时可恢复会话使用 ${MULTIPLEXER}`,
+    description: `一次性运行命令并等待退出；超时终止进程树并返回输出。默认使用非 TTY 子进程；仅当命令必须检测 TTY、渲染 TUI 或读取 /dev/tty 时设置 tty=true，该模式要求安装 node-pty 和 @xterm/headless。长驻服务优先使用项目已有的进程管理方式，临时可恢复会话使用 ${MULTIPLEXER}`,
     parameters: {
       type: "object",
       properties: {

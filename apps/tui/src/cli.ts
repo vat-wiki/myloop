@@ -12,6 +12,7 @@ export type TuiConfig = {
   allowLocalFiles?: boolean;
   contextWindowTokens?: number;
   sessionId?: string;
+  systemPrompt?: string | false;
 };
 
 export type TuiCliOptions = {
@@ -22,6 +23,8 @@ export type TuiCliOptions = {
   allowLocalFiles: boolean;
   contextWindowTokens?: number;
   sessionId?: string;
+  systemPrompt?: string;
+  systemPromptEnabled: boolean;
   help: boolean;
 };
 
@@ -37,6 +40,8 @@ export function parseTuiArgs(
   let baseURL: string | undefined;
   let contextWindowTokens: number | undefined;
   let sessionId: string | undefined;
+  let systemPrompt: string | undefined;
+  let noSystemPrompt = false;
   let help = false;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -67,6 +72,14 @@ export function parseTuiArgs(
         throw new Error("session id must contain 1-128 letters, numbers, dots, underscores, or hyphens");
       }
       sessionId = next;
+    } else if (argument === "--system-prompt") {
+      const next = value();
+      if (!next) {
+        throw new Error("system prompt path is required");
+      }
+      systemPrompt = next;
+    } else if (argument === "--no-system-prompt") {
+      noSystemPrompt = true;
     } else {
       throw new Error(`unknown argument: ${argument}`);
     }
@@ -82,6 +95,13 @@ export function parseTuiArgs(
     throw new Error("model is required");
   }
 
+  const configuredSystemPrompt = systemPrompt ?? (
+    typeof config.systemPrompt === "string" ? config.systemPrompt : undefined
+  );
+  const systemPromptEnabled = noSystemPrompt
+    ? false
+    : systemPrompt !== undefined || config.systemPrompt !== false;
+
   return {
     protocol: selectedProtocol,
     model: selectedModel,
@@ -90,6 +110,8 @@ export function parseTuiArgs(
     allowLocalFiles: config.allowLocalFiles ?? false,
     contextWindowTokens: contextWindowTokens ?? config.contextWindowTokens,
     sessionId: sessionId ?? config.sessionId,
+    systemPrompt: systemPromptEnabled ? configuredSystemPrompt : undefined,
+    systemPromptEnabled,
     help,
   };
 }
@@ -106,6 +128,8 @@ export function formatTuiHelp(): string {
     "  --base-url <url>",
     "  --context-window-tokens <tokens>",
     "  --session-id <id>              Resume a session; defaults to a new session",
+    "  --system-prompt <file>         Replace the built-in system prompt",
+    "  --no-system-prompt             Disable the replaceable system prompt",
     "  -h, --help",
     "",
     "Commands:",

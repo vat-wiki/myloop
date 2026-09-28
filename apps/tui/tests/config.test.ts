@@ -147,6 +147,27 @@ describe("TUI config loading", () => {
     });
   });
 
+  it("validates system prompt configuration", async () => {
+    const home = await makeTemporaryDirectory();
+    const configPath = join(home, ".agents", "mycoder.json");
+    await mkdir(join(home, ".agents"), { recursive: true });
+
+    await writeFile(configPath, JSON.stringify({ systemPrompt: "./custom.md" }));
+    await expect(loadTuiConfig({ env: {}, cwd: home, home })).resolves.toMatchObject({
+      config: { systemPrompt: join(home, ".agents", "custom.md") },
+    });
+
+    await writeFile(configPath, JSON.stringify({ systemPrompt: false }));
+    await expect(loadTuiConfig({ env: {}, cwd: home, home })).resolves.toMatchObject({
+      config: { systemPrompt: false },
+    });
+
+    await writeFile(configPath, JSON.stringify({ systemPrompt: true }));
+    await expect(loadTuiConfig({ env: {}, cwd: home, home }))
+      .rejects
+      .toThrow("config systemPrompt must be false or a non-empty path");
+  });
+
   async function makeTemporaryDirectory(): Promise<string> {
     const directory = await mkdtemp(join(tmpdir(), "mycoder-config-"));
     temporaryDirectories.push(directory);

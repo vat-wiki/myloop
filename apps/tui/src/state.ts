@@ -1,5 +1,5 @@
 export function formatTuiHelp(): string {
-  return "Commands: /sessions, /help, /usage, /reset, /exit · Enter runs selection · Tab completes · ESC interrupts";
+  return "Commands: /sessions, /help, /usage, /reset, /exit · Enter runs selection · Tab completes · Ctrl+V pastes · ESC interrupts";
 }
 
 export type TuiCommand = {

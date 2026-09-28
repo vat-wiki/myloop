@@ -74,6 +74,19 @@ TUI 默认每次启动都开启新会话，并在第一轮对话后写入 `.agen
 
 ## 命令
 
+TUI 启动时会读取从文件系统根到当前目录的 `AGENTS.md`，并注入系统提示。深层文件的约定覆盖浅层文件的冲突约定。
+
+### 系统提示词
+
+内置提示词是默认 Profile，不是固定约定。TUI 按下面的优先级加载可替换提示词：
+
+1. `--system-prompt <file>`
+2. 当前目录及祖先目录的 `.agents/mycoder/system.md`
+3. `~/.agents/mycoder/system.md`
+4. 内置 `system.md`
+
+配置文件里的 `"systemPrompt": "./team.md"` 等价于指定自定义文件；`"systemPrompt": false` 关闭可替换提示词。`--no-system-prompt` 优先于文件和配置。`AGENTS.md` 与 Skills 的加载方式不受该开关影响。
+
 | 命令 | 说明 |
 |------|------|
 | `/sessions` | 列出并切换会话 |
@@ -83,6 +96,8 @@ TUI 默认每次启动都开启新会话，并在第一轮对话后写入 `.agen
 | `/exit` | 退出 |
 
 输入 `/` 时显示命令候选。`↑/↓` 或 `Shift+Tab` 选择，`Enter` 执行选中命令，`Tab` 只补全。
+
+`Ctrl+V` 读取系统剪贴板并插入输入框；粘贴内容不会因为换行而发送。
 
 ## 架构
 

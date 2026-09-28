@@ -6,7 +6,12 @@ import { OpenAIResponses } from "mycoder/clients/openai-responses";
 import { runTuiApp } from "./app.js";
 import { createTuiLogger } from "./logging.js";
 import type { TuiLogger } from "./logging.js";
-import { composeTuiSystem, loadCoreInstructions, loadTuiSkills } from "./system-prompt.js";
+import {
+  composeTuiSystem,
+  loadAgentsInstructions,
+  loadSystemInstructions,
+  loadTuiSkills,
+} from "./system-prompt.js";
 import { loadTuiConfig } from "./config.js";
 import { createTuiSessionId, FileSessionStore } from "./session.js";
 import { errorText } from "./state.js";
@@ -20,16 +25,21 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
   let sessionStore: FileSessionStore | undefined;
   try {
     const { config } = await loadTuiConfig({ env: process.env });
-    const [instructions, skills] = await Promise.all([
-      loadCoreInstructions(),
-      loadTuiSkills({ home: process.env.HOME }),
-    ]);
     options = parseTuiArgs(argv, process.env, config);
 
     if (options.help) {
       process.stdout.write(`${formatTuiHelp()}\n`);
       return 0;
     }
+
+    const [instructions, agentsInstructions, skills] = await Promise.all([
+      loadSystemInstructions({
+        path: options.systemPrompt,
+        enabled: options.systemPromptEnabled,
+      }),
+      loadAgentsInstructions(),
+      loadTuiSkills({ home: process.env.HOME }),
+    ]);
 
     input = createUserInputAdapter({ allowLocalFiles: options.allowLocalFiles });
     sessionStore = new FileSessionStore({ cwd: process.cwd() });
@@ -39,7 +49,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       name: "tui-agent",
       modelClient,
       input,
-      system: composeTuiSystem({ instructions, skills }),
+      system: composeTuiSystem({ instructions, agentsInstructions, skills }),
       extensions: [logger.extension],
       sessionId: options.sessionId ?? createTuiSessionId(),
       sessionStore,

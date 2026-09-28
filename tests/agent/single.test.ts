@@ -23,4 +23,15 @@ describe("SingleAgent", () => {
     expect(agent.messages).toHaveLength(2);
     expect(agent.running).toBe(false);
   });
+
+  it("explains an empty answer truncated by max_tokens", async () => {
+    const modelClient: ModelClient = {
+      complete: async () => ({ stopReason: "max_tokens", content: [] }),
+    };
+    const agent = new SingleAgent({ name: "worker", modelClient });
+
+    await expect(agent.run("hello")).rejects.toThrow(
+      "model reached max_tokens before producing a text answer",
+    );
+  });
 });

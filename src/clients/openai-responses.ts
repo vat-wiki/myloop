@@ -17,12 +17,17 @@ import {
   toOpenAIMediaReference,
   toOpenAIToolResultText,
 } from "./openai-common.js";
+import { thinkingBlock } from "../runtime/messages.js";
 import { postSse } from "./http.js";
 
 type OpenAIResponseItem = Record<string, unknown>;
 type OpenAIResponseContentPart = Record<string, unknown>;
 
 type OpenAIResponsesResponse = {
+  status?: string;
+  incomplete_details?: {
+    reason?: string;
+  };
   output?: Array<{
     type?: string;
     id?: string;
@@ -30,6 +35,10 @@ type OpenAIResponsesResponse = {
     name?: string;
     arguments?: string;
     content?: Array<{
+      type?: string;
+      text?: string;
+    }>;
+    summary?: Array<{
       type?: string;
       text?: string;
     }>;
@@ -47,7 +56,12 @@ type OpenAIResponsesResponse = {
   };
 };
 
-type OpenAIResponsesOptions = OpenAIClientOptions;
+type OpenAIResponsesOptions = OpenAIClientOptions & {
+  reasoning?: {
+    effort?: string;
+    summary?: string;
+  };
+};
 
 type OpenAIResponsesSseEvent = {
   type?: string;
@@ -60,7 +74,7 @@ type OpenAIResponsesSseEvent = {
 
 class OpenAIResponses {
   readonly model: string;
-  readonly maxTokens: number;
+  readonly maxTokens?: number;
   readonly context: ModelContextInfo;
   readonly #options: OpenAIResponsesOptions;
 
@@ -71,10 +85,10 @@ class OpenAIResponses {
 
     this.#options = options;
     this.model = options.model;
-    this.maxTokens = options.maxTokens ?? 4_096;
+    this.maxTokens = options.maxTokens;
     this.context = {
       contextWindowTokens: contextWindowTokens ?? 128_000,
-      reservedOutputTokens: this.maxTokens,
+      reservedOutputTokens: this.maxTokens ?? 4_096,
       safetyTokens: 20_000,
       estimateRequestTokens(request: ModelRequest): number {
         return Math.ceil(JSON.stringify(request).length / 4);
@@ -82,21 +96,29 @@ class OpenAIResponses {
     };
   }
 
-  async complete({ system, messages, tools, signal, onTextDelta }: ModelRequest): Promise<ModelResponse> {
+  async complete({
+    system,
+    messages,
+    tools,
+    signal,
+    onTextDelta,
+    onThinkingDelta,
+  }: ModelRequest): Promise<ModelResponse> {
     const body = {
         model: this.model,
         instructions: system,
-        max_output_tokens: this.maxTokens,
         input: await Promise.all(messages.map((message) => toOpenAIResponseItems(message, this.#options.artifactStore))).then((items) => items.flat()),
-        ...(tools.length === 0 ? {} : {
-          tools: tools.map(toOpenAIResponseTool),
-          tool_choice: "auto",
-        }),
+        ...(this.maxTokens ? { max_output_tokens: this.maxTokens } : {}),
+      ...(tools.length === 0 ? {} : {
+        tools: tools.map(toOpenAIResponseTool),
+        tool_choice: "auto",
+      }),
+      ...(this.#options.reasoning ? { reasoning: this.#options.reasoning } : {}),
       ...(onTextDelta && !this.#options.transport ? { stream: true } : {}),
     };
 
     const response = onTextDelta && !this.#options.transport
-      ? await this.#completeStream(body, signal, onTextDelta)
+      ? await this.#completeStream(body, signal, onTextDelta, onThinkingDelta)
       : await postOpenAIRequest<OpenAIResponsesResponse>(
       this.#options,
       "/responses",
@@ -117,15 +139,30 @@ class OpenAIResponses {
         });
         continue;
       }
+      if (item.type === "reasoning") {
+        for (const summary of item.summary ?? []) {
+          if (summary.text !== undefined) {
+            content.push(thinkingBlock(summary.text));
+          }
+        }
+        continue;
+      }
       if (item.type !== "message") continue;
       for (const part of item.content ?? []) {
         if (part.type === "output_text" || part.text !== undefined) {
           content.push({ type: "text", text: part.text ?? "" });
         }
       }
+      continue;
     }
 
-    const stopReason: StopReason = hasToolCall ? "tool_call" : "end";
+    const incomplete = response.status === "incomplete" &&
+      response.incomplete_details?.reason === "max_output_tokens";
+    const stopReason: StopReason = hasToolCall
+      ? "tool_call"
+      : incomplete
+        ? "max_tokens"
+        : "end";
     return {
       stopReason,
       content,
@@ -143,10 +180,12 @@ class OpenAIResponses {
     body: unknown,
     signal: AbortSignal | undefined,
     onTextDelta: (delta: string) => void,
+    onThinkingDelta?: (delta: string) => void,
   ): Promise<OpenAIResponsesResponse> {
     const { url, headers } = toOpenAIHttpRequest(this.#options, "/responses");
     let finalResponse: OpenAIResponsesResponse | undefined;
     let streamedText: string | undefined;
+    let streamedThinking: string | undefined;
 
     await postSse({
       url,
@@ -166,6 +205,12 @@ class OpenAIResponses {
           onTextDelta(delta);
           return;
         }
+        if (parsed.type === "response.reasoning_summary_text.delta") {
+          const delta = parsed.delta ?? "";
+          streamedThinking = (streamedThinking ?? "") + delta;
+          onThinkingDelta?.(delta);
+          return;
+        }
         if (parsed.type === "response.completed" || parsed.type === "response.incomplete") {
           finalResponse = parsed.response;
           return;
@@ -177,10 +222,16 @@ class OpenAIResponses {
     });
 
     return finalResponse ?? {
-      output: streamedText === undefined ? [] : [{
-        type: "message",
-        content: [{ type: "output_text", text: streamedText }],
-      }],
+      output: [
+        ...(streamedThinking === undefined ? [] : [{
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: streamedThinking }],
+        }]),
+        ...(streamedText === undefined ? [] : [{
+          type: "message",
+          content: [{ type: "output_text", text: streamedText }],
+        }]),
+      ],
     };
   }
 }

@@ -19,6 +19,7 @@ import {
   toOpenAIMediaReference,
   toOpenAIToolResultText,
 } from "./openai-common.js";
+import { thinkingBlock } from "../runtime/messages.js";
 import { postSse } from "./http.js";
 
 type OpenAIChatMessage = Record<string, unknown>;
@@ -29,6 +30,8 @@ type OpenAIChatResponse = {
     finish_reason?: string;
     message?: {
       content?: string | Array<{ type?: string; text?: string }> | null;
+      reasoning?: string;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         id?: string;
         function?: {
@@ -57,6 +60,8 @@ type OpenAIChatSseChunk = {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      reasoning?: string;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         index?: number;
         id?: string;
@@ -73,7 +78,7 @@ type OpenAIChatSseChunk = {
 
 class OpenAIChat {
   readonly model: string;
-  readonly maxTokens: number;
+  readonly maxTokens?: number;
   readonly context: ModelContextInfo;
   readonly #options: OpenAIChatOptions;
 
@@ -84,10 +89,10 @@ class OpenAIChat {
 
     this.#options = options;
     this.model = options.model;
-    this.maxTokens = options.maxTokens ?? 4_096;
+    this.maxTokens = options.maxTokens;
     this.context = {
       contextWindowTokens: contextWindowTokens ?? 128_000,
-      reservedOutputTokens: this.maxTokens,
+      reservedOutputTokens: this.maxTokens ?? 4_096,
       safetyTokens: 20_000,
       estimateRequestTokens(request: ModelRequest): number {
         return Math.ceil(JSON.stringify(request).length / 4);
@@ -95,7 +100,14 @@ class OpenAIChat {
     };
   }
 
-  async complete({ system, messages, tools, signal, onTextDelta }: ModelRequest): Promise<ModelResponse> {
+  async complete({
+    system,
+    messages,
+    tools,
+    signal,
+    onTextDelta,
+    onThinkingDelta,
+  }: ModelRequest): Promise<ModelResponse> {
     const mappedMessages = await Promise.all(messages.map((message) => toOpenAIChatMessages(message, this.#options.artifactStore)))
       .then((mapped) => [
         { role: "system", content: system },
@@ -103,8 +115,8 @@ class OpenAIChat {
       ]);
     const body = {
         model: this.model,
-        max_completion_tokens: this.maxTokens,
         messages: mappedMessages,
+        ...(this.maxTokens ? { max_completion_tokens: this.maxTokens } : {}),
         ...(tools.length === 0 ? {} : {
           tools: tools.map(toOpenAIChatTool),
           tool_choice: "auto",
@@ -116,7 +128,7 @@ class OpenAIChat {
     };
 
     const response = onTextDelta && !this.#options.transport
-      ? await this.#completeStream(body, signal, onTextDelta)
+      ? await this.#completeStream(body, signal, onTextDelta, onThinkingDelta)
       : await postOpenAIRequest<OpenAIChatResponse>(
       this.#options,
       "/chat/completions",
@@ -127,6 +139,10 @@ class OpenAIChat {
     const choice = response.choices?.[0];
     const message = choice?.message;
     const content: Array<AgentContentBlock> = [];
+    const reasoning = message?.reasoning_content ?? message?.reasoning;
+    if (typeof reasoning === "string" && reasoning.length > 0) {
+      content.push(thinkingBlock(reasoning));
+    }
     if (typeof message?.content === "string") {
       content.push({ type: "text", text: message.content });
     } else if (Array.isArray(message?.content)) {
@@ -145,7 +161,11 @@ class OpenAIChat {
       });
     }
 
-    const stopReason: StopReason = choice?.finish_reason === "tool_calls" ? "tool_call" : "end";
+    const stopReason: StopReason = choice?.finish_reason === "tool_calls"
+      ? "tool_call"
+      : choice?.finish_reason === "length"
+        ? "max_tokens"
+        : "end";
     return {
       stopReason,
       content,
@@ -163,10 +183,12 @@ class OpenAIChat {
     body: unknown,
     signal: AbortSignal | undefined,
     onTextDelta: (delta: string) => void,
+    onThinkingDelta?: (delta: string) => void,
   ): Promise<OpenAIChatResponse> {
     const response: OpenAIChatResponse = {};
     const { url, headers } = toOpenAIHttpRequest(this.#options, "/chat/completions");
     let text: string | undefined;
+    let thinking: string | undefined;
     let finishReason: string | undefined;
     const toolCalls = new Map<number, {
       id?: string;
@@ -191,6 +213,11 @@ class OpenAIChat {
         const choice = parsed.choices?.[0];
         if (choice?.finish_reason) finishReason = choice.finish_reason;
         const delta = choice?.delta;
+        const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning;
+        if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) {
+          thinking = (thinking ?? "") + reasoningDelta;
+          onThinkingDelta?.(reasoningDelta);
+        }
         if (delta?.content) {
           text = (text ?? "") + delta.content;
           onTextDelta(delta.content);
@@ -207,6 +234,7 @@ class OpenAIChat {
     });
 
     const content: Array<AgentContentBlock> = [];
+    if (thinking !== undefined) content.push(thinkingBlock(thinking));
     if (text !== undefined) content.push({ type: "text", text });
     for (const [index, toolCall] of [...toolCalls.entries()].sort(([left], [right]) => left - right)) {
       void index;
@@ -222,6 +250,7 @@ class OpenAIChat {
       finish_reason: finishReason,
       message: {
         content: text,
+        ...(thinking === undefined ? {} : { reasoning_content: thinking }),
         tool_calls: [...toolCalls.entries()].sort(([left], [right]) => left - right).map(([, toolCall]) => ({
           id: toolCall.id,
           function: { name: toolCall.name, arguments: toolCall.arguments },

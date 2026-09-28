@@ -12,6 +12,10 @@ export type OpenAIClientOptions = {
   model: string;
   maxTokens?: number;
   contextWindowTokens?: number;
+  reasoning?: {
+    effort?: string;
+    summary?: string;
+  };
   headers?: Record<string, string>;
   artifactStore?: ArtifactStore;
   fetch?: typeof fetch;

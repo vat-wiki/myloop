@@ -25,6 +25,8 @@ describe("TUI CLI", () => {
       allowLocalFiles: false,
       contextWindowTokens: 131_072,
       sessionId: undefined,
+      systemPrompt: undefined,
+      systemPromptEnabled: true,
       help: false,
     });
   });
@@ -45,8 +47,45 @@ describe("TUI CLI", () => {
       allowLocalFiles: true,
       contextWindowTokens: undefined,
       sessionId: "from-config",
+      systemPrompt: undefined,
+      systemPromptEnabled: true,
       help: false,
     });
+  });
+
+  it("parses system prompt controls and config overrides", () => {
+    expect(parseTuiArgs(["--model", "gpt-test", "--system-prompt", "custom.md"]))
+      .toMatchObject({
+        systemPrompt: "custom.md",
+        systemPromptEnabled: true,
+      });
+    expect(parseTuiArgs(["--model", "gpt-test", "--no-system-prompt"]))
+      .toMatchObject({
+        systemPrompt: undefined,
+        systemPromptEnabled: false,
+      });
+    expect(parseTuiArgs(["--model", "gpt-test"], {}, { systemPrompt: "config.md" }))
+      .toMatchObject({
+        systemPrompt: "config.md",
+        systemPromptEnabled: true,
+      });
+    expect(parseTuiArgs(["--model", "gpt-test"], {}, { systemPrompt: false }))
+      .toMatchObject({
+        systemPrompt: undefined,
+        systemPromptEnabled: false,
+      });
+    expect(parseTuiArgs(["--model", "gpt-test", "--system-prompt", "custom.md"], {}, { systemPrompt: false }))
+      .toMatchObject({
+        systemPrompt: "custom.md",
+        systemPromptEnabled: true,
+      });
+    expect(parseTuiArgs(["--model", "gpt-test", "--no-system-prompt"], {}, { systemPrompt: "config.md" }))
+      .toMatchObject({
+        systemPrompt: undefined,
+        systemPromptEnabled: false,
+      });
+    expect(() => parseTuiArgs(["--model", "gpt-test", "--system-prompt"]))
+      .toThrow("system prompt path is required");
   });
 
   it("parses and validates a session id", () => {

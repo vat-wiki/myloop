@@ -5,6 +5,7 @@ import {
   documentBlock,
   imageBlock,
   textBlock,
+  thinkingBlock,
   toolCallBlock,
   toolResultBlock,
 } from "../../src/runtime/messages.js";
@@ -31,6 +32,7 @@ describe("OpenAIChat", () => {
       choices: [{
         finish_reason: "tool_calls",
         message: {
+          reasoning_content: "internal reasoning",
           content: "Using a tool",
           tool_calls: [{
             id: "call-1",
@@ -47,7 +49,7 @@ describe("OpenAIChat", () => {
         completion_tokens_details: { reasoning_tokens: 3 },
       },
     }), { status: 200 }));
-    const modelClient = new OpenAIChat({ apiKey: "test-key", model: "gpt-test", fetch: fetchMock });
+    const modelClient = new OpenAIChat({ apiKey: "test-key", model: "gpt-test", maxTokens: 4_096, fetch: fetchMock });
     const signal = new AbortController().signal;
 
     const result = await modelClient.complete({
@@ -99,6 +101,7 @@ describe("OpenAIChat", () => {
     expect(result).toEqual({
       stopReason: "tool_call",
       content: [
+        thinkingBlock("internal reasoning"),
         textBlock("Using a tool"),
         toolCallBlock("call-1", "bash", { command: "pwd" }),
       ],
@@ -140,6 +143,37 @@ describe("OpenAIChat", () => {
     expect(result.usage).toMatchObject({ inputTokens: 3, outputTokens: 7, totalTokens: 10 });
     const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(request.stream).toBe(true);
+  });
+
+  it("maps length finish reason to max_tokens", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ finish_reason: "length", message: { content: "partial" } }],
+    }), { status: 200 }));
+    const modelClient = new OpenAIChat({ apiKey: "test-key", model: "gpt-test", fetch: fetchMock });
+
+    const result = await modelClient.complete({
+      system: "system",
+      tools: [],
+      messages: [{ role: "user", content: [textBlock("hello")] }],
+    });
+
+    expect(result.stopReason).toBe("max_tokens");
+  });
+
+  it("lets the provider choose output tokens by default", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { content: "ok" } }],
+    }), { status: 200 }));
+    const modelClient = new OpenAIChat({ apiKey: "test-key", model: "gpt-test", fetch: fetchMock });
+
+    await modelClient.complete({
+      system: "system",
+      tools: [],
+      messages: [{ role: "user", content: [textBlock("hello")] }],
+    });
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect("max_completion_tokens" in request).toBe(false);
   });
 
   it("resolves artifact references during OpenAI mapping", async () => {

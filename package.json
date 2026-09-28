@@ -8,9 +8,11 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "tsc && npm run build --workspace apps/tui",
-    "typecheck": "tsc --noEmit && npm run typecheck --workspace apps/tui",
-    "test": "vitest run && npm run test --workspace apps/tui",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc && npm run build --workspace apps/cli && npm run build --workspace apps/tui",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspace apps/cli && npm run typecheck --workspace apps/tui",
+    "test": "vitest run && npm run test --workspace apps/cli && npm run test --workspace apps/tui",
+    "cli": "npm run build --workspace apps/cli && node apps/cli/dist/main.js",
     "tui": "npm run build && node --experimental-ffi apps/tui/dist/main.js",
     "prepublishOnly": "npm run build"
   },
@@ -55,6 +57,10 @@
       "types": "./dist/skills/index.d.ts",
       "default": "./dist/skills/index.js"
     },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "default": "./dist/config.js"
+    },
     "./composite": {
       "types": "./dist/agent/composite.d.ts",
       "default": "./dist/agent/composite.js"
@@ -73,9 +79,17 @@
     },
     "./package.json": "./package.json"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@xterm/headless": "^6.0.0",
     "node-pty": "^1.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@xterm/headless": {
+      "optional": true
+    },
+    "node-pty": {
+      "optional": true
+    }
   },
   "allowScripts": {
     "node-pty@1.1.0": true
@@ -85,7 +99,9 @@
     "dist"
   ],
   "devDependencies": {
+    "@xterm/headless": "^6.0.0",
     "@types/node": "^26.6.2",
+    "node-pty": "^1.1.0",
     "typescript": "^7.0.2",
     "vitest": "^3.2.7"
   }

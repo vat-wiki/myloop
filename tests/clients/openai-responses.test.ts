@@ -4,6 +4,7 @@ import {
   documentBlock,
   imageBlock,
   textBlock,
+  thinkingBlock,
   toolCallBlock,
   toolResultBlock,
 } from "../../src/runtime/messages.js";
@@ -28,6 +29,7 @@ describe("OpenAIResponses", () => {
   it("maps internal messages to Responses request and response shapes", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       output: [
+        { type: "reasoning", summary: [{ type: "summary_text", text: "internal reasoning" }] },
         { type: "message", content: [{ type: "output_text", text: "Using a tool" }] },
         {
           type: "function_call",
@@ -44,7 +46,7 @@ describe("OpenAIResponses", () => {
         output_tokens_details: { reasoning_tokens: 3 },
       },
     }), { status: 200 }));
-    const modelClient = new OpenAIResponses({ apiKey: "test-key", model: "gpt-test", fetch: fetchMock });
+    const modelClient = new OpenAIResponses({ apiKey: "test-key", model: "gpt-test", maxTokens: 4_096, fetch: fetchMock });
 
     const result = await modelClient.complete({
       system: "system prompt",
@@ -89,6 +91,7 @@ describe("OpenAIResponses", () => {
     expect(result).toEqual({
       stopReason: "tool_call",
       content: [
+        thinkingBlock("internal reasoning"),
         textBlock("Using a tool"),
         toolCallBlock("call-1", "bash", { command: "pwd" }),
       ],
@@ -102,25 +105,65 @@ describe("OpenAIResponses", () => {
     });
   });
 
+  it("maps incomplete output to max_tokens", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [
+        { type: "reasoning", summary: [{ type: "summary_text", text: "partial reasoning" }] },
+      ],
+    }), { status: 200 }));
+    const modelClient = new OpenAIResponses({ apiKey: "test-key", model: "gpt-test", fetch: fetchMock });
+
+    const result = await modelClient.complete({
+      system: "system",
+      tools: [],
+      messages: [{ role: "user", content: [textBlock("hello")] }],
+    });
+
+    expect(result.stopReason).toBe("max_tokens");
+    expect(result.content).toEqual([thinkingBlock("partial reasoning")]);
+  });
+
+  it("lets the provider choose output tokens by default", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }],
+    }), { status: 200 }));
+    const modelClient = new OpenAIResponses({ apiKey: "test-key", model: "gpt-test", fetch: fetchMock });
+
+    await modelClient.complete({
+      system: "system",
+      tools: [],
+      messages: [{ role: "user", content: [textBlock("hello")] }],
+    });
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect("max_output_tokens" in request).toBe(false);
+  });
+
   it("streams output text deltas and maps the completed response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse([
+      'data: {"type":"response.reasoning_summary_text.delta","delta":"reasoning"}\n\n',
       'data: {"type":"response.output_text.delta","delta":"Hel"}\n\n',
       'data: {"type":"response.output_text.delta","delta":"lo"}\n\n',
-      'data: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"Hello"}]}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n',
+      'data: {"type":"response.completed","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","content":[{"type":"output_text","text":"Hello"}]}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}\n\n',
     ]));
     const modelClient = new OpenAIResponses({ apiKey: "test-key", model: "gpt-test", fetch: fetchMock });
     const deltas: Array<string> = [];
+    const thinkingDeltas: Array<string> = [];
 
     const result = await modelClient.complete({
       system: "system",
       tools: [],
       messages: [{ role: "user", content: [textBlock("hello")] }],
       onTextDelta: (delta) => deltas.push(delta),
+      onThinkingDelta: (delta) => thinkingDeltas.push(delta),
     });
 
     expect(deltas).toEqual(["Hel", "lo"]);
+    expect(thinkingDeltas).toEqual(["reasoning"]);
     expect(result).toEqual({
-      stopReason: "end",
+      stopReason: "max_tokens",
       content: [textBlock("Hello")],
       usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
     });

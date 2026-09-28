@@ -6,12 +6,13 @@ import type {
   ToolResultBlock,
   UserContentBlock,
 } from "./messages.js";
-import { createAssistantMessage, createToolMessage, createUserMessage, toolResultBlock } from "./messages.js";
+import { createAssistantMessage, createToolMessage, createUserMessage, textBlock, toolResultBlock } from "./messages.js";
 import type {
   ModelClient,
   ModelRequest,
   ModelResponse,
 } from "./model-client.js";
+import { sumTokenCounts } from "./model-client.js";
 import { EventBus, type AgentEventMap, type EventListener } from "./events.js";
 import type { AgentExtension } from "./extension.js";
 import {
@@ -41,6 +42,8 @@ export type ToolHandler = (
 ) => unknown | Promise<unknown>;
 
 export type ToolHandlers = Record<string, ToolHandler>;
+
+const MAX_OUTPUT_CONTINUATIONS = 8;
 
 export type AgentRuntimeOptions = {
   modelClient: ModelClient;
@@ -194,6 +197,9 @@ class AgentRuntime {
   }
 
   #runStep = async (signal: AbortSignal): Promise<ModelResponse> => {
+    let combinedResponse: ModelResponse | undefined;
+    let outputContinuations = 0;
+
     while (true) {
       const pressure = this.#measureContextPressure({
         system: this.system,
@@ -219,19 +225,39 @@ class AgentRuntime {
       signal.throwIfAborted();
       const rawResponse = await this.modelClient.complete({
         ...request,
-        onTextDelta: (delta) => {
-          this.#events.emit("text_delta", { delta });
-        },
+      onTextDelta: (delta) => {
+        this.#events.emit("text_delta", { delta });
+      },
+      onThinkingDelta: (delta) => {
+        this.#events.emit("thinking_delta", { delta });
+      },
       });
       const response = await this.#applyAfterModelResponseExtensions({
         request,
         response: rawResponse,
       });
+      combinedResponse = combinedResponse
+        ? mergeModelResponses(combinedResponse, response)
+        : response;
       const assistantMessage = createAssistantMessage(response.content);
       this.messages.push(assistantMessage);
       this.#events.emit("model_response", { response });
       this.#events.emit("message", { message: assistantMessage });
       this.#events.emit("assistant_message", { message: assistantMessage });
+
+      if (response.stopReason === "max_tokens") {
+        if (outputContinuations >= MAX_OUTPUT_CONTINUATIONS) {
+          return combinedResponse;
+        }
+
+        outputContinuations += 1;
+        const continuationMessage = createUserMessage([textBlock(
+          "Continue from where the previous response stopped. Do not repeat content.",
+        )]);
+        this.messages.push(continuationMessage);
+        this.#events.emit("message", { message: continuationMessage });
+        continue;
+      }
 
       if (response.stopReason !== "tool_call") {
         const text = response.content
@@ -239,7 +265,7 @@ class AgentRuntime {
           .map((block) => block.text)
           .join("\n");
         this.#events.emit("text", { text });
-        return response;
+        return combinedResponse;
       }
 
       const toolResults: Array<ToolResultBlock> = [];
@@ -382,6 +408,53 @@ class AgentRuntime {
       throw new Error(`cannot ${action} session while agent is running`);
     }
   }
+}
+
+function mergeModelResponses(
+  left: ModelResponse,
+  right: ModelResponse,
+): ModelResponse {
+  const content: Array<AgentContentBlock> = [];
+  for (const block of [...left.content, ...right.content]) {
+    const previous = content.at(-1);
+    if (previous?.type === "text" && block.type === "text") {
+      content[content.length - 1] = {
+        type: "text",
+        text: previous.text + block.text,
+      };
+      continue;
+    }
+    if (previous?.type === "thinking" && block.type === "thinking") {
+      content[content.length - 1] = {
+        type: "thinking",
+        thinking: previous.thinking + block.thinking,
+      };
+      continue;
+    }
+    content.push(block);
+  }
+
+  return {
+    stopReason: right.stopReason,
+    content,
+    usage: {
+      inputTokens: sumTokenCounts(left.usage?.inputTokens, right.usage?.inputTokens),
+      outputTokens: sumTokenCounts(left.usage?.outputTokens, right.usage?.outputTokens),
+      totalTokens: sumTokenCounts(left.usage?.totalTokens, right.usage?.totalTokens),
+      cacheReadInputTokens: sumTokenCounts(
+        left.usage?.cacheReadInputTokens,
+        right.usage?.cacheReadInputTokens,
+      ),
+      cacheCreationInputTokens: sumTokenCounts(
+        left.usage?.cacheCreationInputTokens,
+        right.usage?.cacheCreationInputTokens,
+      ),
+      reasoningOutputTokens: sumTokenCounts(
+        left.usage?.reasoningOutputTokens,
+        right.usage?.reasoningOutputTokens,
+      ),
+    },
+  };
 }
 
 function createAgentRuntime(options: AgentRuntimeOptions): AgentRuntime {

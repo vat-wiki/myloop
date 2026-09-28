@@ -6,6 +6,7 @@ export type ModelRequest = {
   tools: Array<ToolDefinition>;
   signal?: AbortSignal;
   onTextDelta?: (delta: string) => void;
+  onThinkingDelta?: (delta: string) => void;
 };
 
 export type ModelResponse = {

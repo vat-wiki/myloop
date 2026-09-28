@@ -2,7 +2,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { composeTuiSystem, loadCoreInstructions, loadTuiSkills } from "../src/system-prompt.js";
+import {
+  composeTuiSystem,
+  loadAgentsInstructions,
+  loadCoreInstructions,
+  loadSystemInstructions,
+  loadTuiSkills,
+} from "../src/system-prompt.js";
 import { parseSkillContents } from "mycoder/skills";
 import { loadSkills } from "../src/skills.js";
 
@@ -85,6 +91,62 @@ describe("TUI skills loading", () => {
 });
 
 describe("TUI system prompt", () => {
+  it("loads the nearest project system prompt before global and built-in prompts", async () => {
+    const home = await makeTemporaryDirectory();
+    const root = await makeTemporaryDirectory();
+    const nested = join(root, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    await mkdir(join(home, ".agents", "mycoder"), { recursive: true });
+    await mkdir(join(root, ".agents", "mycoder"), { recursive: true });
+    await writeFile(join(home, ".agents", "mycoder", "system.md"), "Global prompt.");
+    await writeFile(join(root, ".agents", "mycoder", "system.md"), "Root prompt.");
+
+    await expect(loadSystemInstructions({ cwd: nested, home })).resolves.toBe("Root prompt.");
+  });
+
+  it("falls back to a global system prompt and the built-in prompt", async () => {
+    const home = await makeTemporaryDirectory();
+    const root = await makeTemporaryDirectory();
+    await mkdir(join(home, ".agents", "mycoder"), { recursive: true });
+    await writeFile(join(home, ".agents", "mycoder", "system.md"), "Global prompt.");
+
+    await expect(loadSystemInstructions({ cwd: root, home })).resolves.toBe("Global prompt.");
+    await expect(loadSystemInstructions({
+      cwd: root,
+      home: join(root, "missing-home"),
+    })).resolves.toContain("# Shell Roadmap");
+  });
+
+  it("uses an explicit system prompt or disables it", async () => {
+    const root = await makeTemporaryDirectory();
+    const promptPath = join(root, "custom.md");
+    await writeFile(promptPath, "Custom prompt.");
+
+    await expect(loadSystemInstructions({ cwd: root, path: promptPath })).resolves.toBe("Custom prompt.");
+    await expect(loadSystemInstructions({ cwd: root, enabled: false })).resolves.toBe("");
+    await expect(loadSystemInstructions({ cwd: root, path: join(root, "missing.md") }))
+      .rejects
+      .toThrow("system prompt file not found");
+  });
+
+  it("loads applicable AGENTS files from root to working directory", async () => {
+    const root = await makeTemporaryDirectory();
+    const nested = join(root, "packages", "app");
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(root, "AGENTS.md"), "Root instructions.");
+    await writeFile(join(nested, "AGENTS.md"), "Nested instructions.");
+
+    await expect(loadAgentsInstructions({ cwd: nested })).resolves.toBe(
+      "Root instructions.\n\nNested instructions.",
+    );
+  });
+
+  it("does not load AGENTS instructions when no applicable file exists", async () => {
+    const root = await makeTemporaryDirectory();
+
+    await expect(loadAgentsInstructions({ cwd: root })).resolves.toBe("");
+  });
+
   it("loads core shell instructions", async () => {
     const instructions = await loadCoreInstructions();
 
@@ -109,6 +171,21 @@ describe("TUI system prompt", () => {
     expect(system).toContain("`/tmp`");
     expect(system).toContain("- `project-skill`: Project skill");
     expect(system).not.toContain("Project instructions");
+  });
+
+  it("inlines AGENTS instructions before the skill catalog", () => {
+    const system = composeTuiSystem({
+      agentsInstructions: "Use focused checks.",
+      skills: [{
+        name: "project-skill",
+        description: "Project skill",
+        instructions: "Project instructions",
+        path: "/tmp/project-skill/SKILL.md",
+      }],
+    });
+
+    expect(system.indexOf("Use focused checks.")).toBeLessThan(system.indexOf("## Skills"));
+    expect(system).toContain("nested instructions override ancestor instructions.");
   });
 
   it("supports installed skill metadata in the catalog", () => {

@@ -6,9 +6,10 @@ import type {
   DocumentBlock,
   ImageBlock,
   StopReason,
+  ThinkingBlock,
   ToolDefinition,
 } from "../runtime/messages.js";
-import { normalizeContent, textBlock, toolCallBlock } from "../runtime/messages.js";
+import { normalizeContent, textBlock, thinkingBlock, toolCallBlock } from "../runtime/messages.js";
 import {
   createFetchTransport,
   postJson,
@@ -31,6 +32,7 @@ type AnthropicOptions = {
   baseURL?: string;
   model: string;
   maxTokens?: number;
+  thinkingBudgetTokens?: number;
   contextWindowTokens?: number;
   artifactStore?: ArtifactStore;
   headers?: Record<string, string>;
@@ -94,6 +96,7 @@ type AnthropicResponse = {
   content?: Array<{
     type: string;
     text?: string;
+    thinking?: string;
     id?: string;
     name?: string;
     input?: unknown;
@@ -115,6 +118,7 @@ type AnthropicSseEvent = {
   delta?: {
     type?: string;
     text?: string;
+    thinking?: string;
     partial_json?: string;
     stop_reason?: string;
   };
@@ -159,7 +163,14 @@ class Anthropic {
     };
   }
 
-  async complete({ system, messages, tools, signal, onTextDelta }: ModelRequest): Promise<ModelResponse> {
+  async complete({
+    system,
+    messages,
+    tools,
+    signal,
+    onTextDelta,
+    onThinkingDelta,
+  }: ModelRequest): Promise<ModelResponse> {
     const baseURL = (this.#options.baseURL ?? ANTHROPIC_DEFAULT_BASE_URL).replace(/\/+$/, "");
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -181,10 +192,16 @@ class Anthropic {
       system,
       tools: tools.map(toAnthropicTool),
       messages: await Promise.all(messages.map((message) => toAnthropicMessage(message, this.#artifactStore))),
+      ...(this.#options.thinkingBudgetTokens ? {
+        thinking: {
+          type: "enabled",
+          budget_tokens: this.#options.thinkingBudgetTokens,
+        },
+      } : {}),
       ...(onTextDelta && !this.#options.transport ? { stream: true } : {}),
     };
     const response = onTextDelta && !this.#options.transport
-      ? await this.#completeStream(requestBody, signal, onTextDelta)
+      ? await this.#completeStream(requestBody, signal, onTextDelta, onThinkingDelta)
       : await postJson<AnthropicResponse>({
         transport,
         url: `${baseURL}/messages`,
@@ -195,7 +212,11 @@ class Anthropic {
         errorName: "AnthropicHttpError",
       });
 
-    const stopReason: StopReason = response.stop_reason === "tool_use" ? "tool_call" : "end";
+    const stopReason: StopReason = response.stop_reason === "tool_use"
+      ? "tool_call"
+      : response.stop_reason === "max_tokens"
+        ? "max_tokens"
+        : "end";
     const usage = response.usage;
     const cacheCreationInputTokens = sumTokenCounts(
       usage?.cache_creation_input_tokens,
@@ -209,9 +230,7 @@ class Anthropic {
     );
     return {
       stopReason,
-      content: (response.content ?? [])
-        .filter((block) => block.type !== "thinking" && block.type !== "redacted_thinking")
-        .map(toInternalBlock),
+      content: (response.content ?? []).map(toInternalBlock),
       usage: normalizeAnthropicUsage(usage),
     };
   }
@@ -220,6 +239,7 @@ class Anthropic {
     requestBody: unknown,
     signal: AbortSignal | undefined,
     onTextDelta: (delta: string) => void,
+    onThinkingDelta?: (delta: string) => void,
   ): Promise<AnthropicResponse> {
     const baseURL = (this.#options.baseURL ?? ANTHROPIC_DEFAULT_BASE_URL).replace(/\/+$/, "");
     const headers: Record<string, string> = {
@@ -258,6 +278,8 @@ class Anthropic {
           const block = parsed.content_block;
           if (block?.type === "text") {
             content[index] = { type: "text", text: "" };
+          } else if (block?.type === "thinking") {
+            content[index] = { type: "thinking", thinking: "" };
           } else if (block?.type === "tool_use") {
           content[index] = {
             type: "tool_use",
@@ -275,6 +297,10 @@ class Anthropic {
             const delta = parsed.delta.text ?? "";
             block.text += delta;
             onTextDelta(delta);
+          } else if (parsed.delta?.type === "thinking_delta" && block?.type === "thinking") {
+            const delta = parsed.delta.thinking ?? "";
+            block.thinking += delta;
+            onThinkingDelta?.(delta);
           } else if (parsed.delta?.type === "input_json_delta" && block?.type === "tool_use") {
             toolArguments.set(index, (toolArguments.get(index) ?? "") + (parsed.delta.partial_json ?? ""));
           }
@@ -345,12 +371,14 @@ async function toAnthropicMessage(
 ): Promise<AnthropicMessageParam> {
   return {
     role: message.role === "tool" ? "user" : message.role,
-    content: await Promise.all(normalizeContent(message.content).map((block) => toAnthropicBlock(block, artifactStore))),
+    content: await Promise.all(normalizeContent(message.content)
+      .filter((block): block is Exclude<AgentContentBlock, ThinkingBlock> => block.type !== "thinking")
+      .map((block) => toAnthropicBlock(block, artifactStore))),
   };
 }
 
 async function toAnthropicBlock(
-  block: AgentContentBlock,
+  block: Exclude<AgentContentBlock, ThinkingBlock>,
   artifactStore?: ArtifactStore,
 ): Promise<AnthropicContentBlockParam> {
   if (block.type === "text") {
@@ -460,6 +488,14 @@ async function toAnthropicDocumentSource(
 function toInternalBlock(block: NonNullable<AnthropicResponse["content"]>[number]): AgentContentBlock {
   if (block.type === "text") {
     return textBlock(block.text ?? "");
+  }
+
+  if (block.type === "thinking") {
+    return thinkingBlock(block.thinking ?? "");
+  }
+
+  if (block.type === "redacted_thinking") {
+    return thinkingBlock("[thinking redacted by provider]");
   }
 
   if (block.type === "tool_use") {

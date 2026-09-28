@@ -12,6 +12,7 @@ export type AgentEventMap = {
   model_response: { response: ModelResponse };
   text: { text: string };
   text_delta: { delta: string };
+  thinking_delta: { delta: string };
   tool_start: { id: string; name: string; input: Record<string, unknown> };
   tool_end: { id: string; name: string; input: Record<string, unknown>; output: unknown };
   context_pressure: { pressure: ContextPressure };
