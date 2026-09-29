@@ -1,13 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Skill } from "mycoder/skills";
-import { loadSkills, type LoadedSkill } from "./skills.js";
+import { composeSystem, loadAgentsInstructions, readInstructions, type LoadedSkill } from "@mycoder/app-sdk";
+import { loadSkills } from "./skills.js";
 
-export const tuiBasePrompt = "你是终端Agent。用bash工具完成用户任务，用中文简洁回答。";
+export const tuiBasePrompt = "你是终端Agent。用command工具完成用户任务，用中文简洁回答。";
 
 const coreInstructionsPath = fileURLToPath(new URL("../system.md", import.meta.url));
-const agentsFileName = "AGENTS.md";
 const systemPromptPath = join(".agents", "mycoder", "system.md");
 
 export type LoadSystemInstructionsOptions = {
@@ -27,9 +26,7 @@ export async function loadSystemInstructions({
     return "";
   }
 
-  if (path) {
-    return readInstructions(path, "system prompt file");
-  }
+  if (path) return readInstructions(path, "system prompt file");
 
   const projectPath = await findProjectSystemPromptPath(cwd);
   if (projectPath) {
@@ -46,37 +43,7 @@ export async function loadSystemInstructions({
   return readInstructions(coreInstructionsPath, "built-in system prompt file");
 }
 
-export async function loadAgentsInstructions({
-  cwd = process.cwd(),
-}: {
-  cwd?: string;
-} = {}): Promise<string> {
-  const paths: Array<string> = [];
-  let directory = resolve(cwd);
-
-  while (true) {
-    paths.push(join(directory, agentsFileName));
-
-    const parent = dirname(directory);
-    if (parent === directory) {
-      break;
-    }
-    directory = parent;
-  }
-
-  const instructions: Array<string> = [];
-  for (const path of paths.reverse()) {
-    try {
-      const instructionsText = (await readFile(path, "utf8")).trim();
-      if (instructionsText.length > 0) {
-        instructions.push(instructionsText);
-      }
-    } catch {
-    }
-  }
-
-  return instructions.join("\n\n");
-}
+export { loadAgentsInstructions };
 
 export async function loadCoreInstructions({
   path = coreInstructionsPath,
@@ -101,42 +68,14 @@ export function composeTuiSystem({
 }: {
   instructions?: string;
   agentsInstructions?: string;
-  skills?: ReadonlyArray<LoadedSkill | Skill>;
+  skills?: ReadonlyArray<LoadedSkill>;
 } = {}): string {
-  return [
-    tuiBasePrompt,
+  return composeSystem({
+    basePrompt: tuiBasePrompt,
     instructions,
-    renderAgentsInstructions(agentsInstructions),
-    renderSkillCatalog(skills),
-  ].filter((section) => section.length > 0).join("\n\n");
-}
-
-function renderAgentsInstructions(agentsInstructions: string): string {
-  if (agentsInstructions.length === 0) {
-    return "";
-  }
-
-  return [
-    "## AGENTS",
-    "",
-    "Follow the applicable instructions below; nested instructions override ancestor instructions.",
-    "",
     agentsInstructions,
-  ].join("\n");
-}
-
-function renderSkillCatalog(skills: ReadonlyArray<Skill>): string {
-  if (skills.length === 0) {
-    return "";
-  }
-
-  return [
-    "## Skills",
-    "",
-    "Use bash to read the relevant `<skill-directory>/SKILL.md` before applying it.",
-    "",
-    ...renderSkillGroups(skills),
-  ].join("\n");
+    skills,
+  });
 }
 
 async function findProjectSystemPromptPath(startDirectory: string): Promise<string | undefined> {
@@ -156,52 +95,16 @@ async function findProjectSystemPromptPath(startDirectory: string): Promise<stri
   }
 }
 
-async function readInstructions(path: string, label: string): Promise<string> {
-  try {
-    return (await readFile(path, "utf8")).trim();
-  } catch (error) {
-    if (isMissingFileError(error)) {
-      throw new Error(`${label} not found: ${path}`);
-    }
-    throw error;
-  }
-}
-
 async function exists(path: string): Promise<boolean> {
   try {
     await readFile(path, "utf8");
     return true;
   } catch (error) {
-    return !isMissingFileError(error);
+    return isMissingFileError(error) ? false : true;
   }
 }
 
 function isMissingFileError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error &&
     (error as { code?: unknown }).code === "ENOENT";
-}
-
-function renderSkillGroups(skills: ReadonlyArray<Skill>): Array<string> {
-  const groups = new Map<string, Array<{ skill: Skill; directory: string }>>();
-
-  for (const skill of skills) {
-    if (!("path" in skill) || typeof skill.path !== "string") {
-      continue;
-    }
-
-    const skillDirectory = dirname(skill.path);
-    const rootDirectory = dirname(skillDirectory);
-    const group = groups.get(rootDirectory) ?? [];
-    group.push({ skill, directory: basename(skillDirectory) });
-    groups.set(rootDirectory, group);
-  }
-
-  return [...groups.entries()].flatMap(([rootDirectory, entries]) => [
-    `\`${rootDirectory}\``,
-    ...entries.map(({ skill, directory }) => {
-      const suffix = directory === skill.name ? "" : ` (dir: \`${directory}\`)`;
-      return `- \`${skill.name}\`${suffix}: ${skill.description}`;
-    }),
-    "",
-  ]).slice(0, -1);
 }

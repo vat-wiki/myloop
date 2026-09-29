@@ -4,10 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import {
-  createTerminalTool,
   runPty,
   runShell,
-} from "../../src/runtime/terminal.js";
+} from "../../src/command/shell/index.js";
 
 describe("runShell", () => {
   it("runs commands without a PTY by default", async () => {
@@ -150,17 +149,5 @@ describe("runPty", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
-  });
-});
-
-describe("createTerminalTool", () => {
-  it("exposes a one-shot command tool", () => {
-    const tool = createTerminalTool();
-
-    expect(tool.name).toBe("bash");
-    expect(tool.parameters.required).toEqual(["command"]);
-    expect(tool.parameters.properties).toHaveProperty("tty");
-    expect(tool.parameters.properties).not.toHaveProperty("sessionId");
-    expect(tool.parameters.properties).not.toHaveProperty("action");
   });
 });

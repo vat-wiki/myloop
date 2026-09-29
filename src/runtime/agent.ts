@@ -1,4 +1,8 @@
-import { createTerminalTool, runPty, runShell } from "./terminal.js";
+import {
+  createCommandHostTool,
+  createCommandHostHandler,
+  type CommandHost,
+} from "../command/index.js";
 import type {
   AgentContentBlock,
   AgentMessage,
@@ -49,6 +53,7 @@ export type AgentRuntimeOptions = {
   modelClient: ModelClient;
   system?: string;
   extensions?: ReadonlyArray<AgentExtension>;
+  commandHost?: CommandHost;
   input?: UserInputResolver | UserInputAdapterOptions;
   sessionId?: string;
   sessionStore?: RuntimeSessionStore;
@@ -64,27 +69,14 @@ class AgentRuntime {
   readonly input: UserInputResolver;
   #sessionId?: string;
   readonly sessionStore?: RuntimeSessionStore;
-  readonly tools: Array<ToolDefinition> = [createTerminalTool()];
-  readonly toolHandlers: ToolHandlers = {
-    bash: async (input, { signal }) => {
-      const command = typeof input.command === "string" ? input.command : undefined;
-      const cwd = typeof input.cwd === "string" ? input.cwd : undefined;
-      const timeout = typeof input.timeout === "number" ? input.timeout : undefined;
-      const idleTimeout = typeof input.idleTimeout === "number" ? input.idleTimeout : undefined;
-      const tty = input.tty === true;
-
-      if (!command) throw new Error("command is required");
-      return tty
-        ? runPty({ command, cwd, timeout, idleTimeout, signal })
-        : runShell({ command, cwd, timeout, idleTimeout, signal });
-    },
-  };
+  #commandHost?: CommandHost;
   messages: Array<AgentMessage> = [];
 
   constructor({
     modelClient,
-    system = "你是终端Agent,用bash工具执行命令来完成任务,用中文简洁回答。",
+    system = "你是终端Agent,用command工具执行命令来完成任务,用中文简洁回答。",
     extensions = [],
+    commandHost,
     input,
     sessionId,
     sessionStore,
@@ -97,6 +89,7 @@ class AgentRuntime {
     this.system = system;
     this.extensions = extensions;
     this.input = isUserInputAdapter(input) ? input : createUserInputAdapter(input);
+    this.#commandHost = commandHost;
     this.#sessionId = sessionId;
     this.sessionStore = sessionStore;
   }
@@ -119,6 +112,20 @@ class AgentRuntime {
 
   get running(): boolean {
     return this.#running;
+  }
+
+  get commandHost(): CommandHost | undefined {
+    return this.#commandHost;
+  }
+
+  get tools(): Array<ToolDefinition> {
+    return this.#commandHost ? [createCommandHostTool(this.#commandHost)] : [];
+  }
+
+  get toolHandlers(): ToolHandlers {
+    return this.#commandHost
+      ? { [this.#commandHost.toolName]: createCommandHostHandler(this.#commandHost) }
+      : {};
   }
 
   abort(reason?: unknown): void {

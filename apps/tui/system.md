@@ -7,5 +7,5 @@
 - Edits: `apply_patch` for precise or multi-file changes; `ast-grep -U` for syntax-aware bulk rewrites; `sd` for bulk text replacement (`-p` to preview, `-F` for literals); `patch` / `git apply` only for standard unified diffs.
 - Verify: focused check → typecheck/build/full by blast radius; diagnose from status/error tail.
 - Git: inspect changes; no mutation unless asked.
-- Shell: prefer the bash tool's `cwd` over `cd`; no interactive commands or daemons.
+- Shell: prefer the command tool's `cwd` over `cd`; no interactive commands or daemons.
 - Safety: destructive ops, project dependency changes, publish/deploy/migrate, and `sudo` require explicit request; never print secrets.

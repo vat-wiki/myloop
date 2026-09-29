@@ -2,7 +2,7 @@
 
 `mycoder` 是一个 TypeScript SDK，不是一个命令行工具。它负责维护 Agent 会话、调用 ModelClient、执行工具循环，并把运行过程以事件形式暴露给调用方。
 
-当前内置了一个 `bash` terminal 工具和 `Anthropic`、`OpenAIChat`、`OpenAIResponses` 三个 ModelClient。模型连接、模型名和请求参数由 ModelClient 管理；Runtime 只使用自己的内部消息格式。
+当前内置了一个 terminal `CommandHost`，对外暴露 `command` 工具；另提供 `Anthropic`、`OpenAIChat`、`OpenAIResponses` 三个 ModelClient。模型连接、模型名和请求参数由 ModelClient 管理；Runtime 只使用自己的内部消息格式。
 
 ## 设计模型
 
@@ -10,11 +10,11 @@
 
 `UserInput` 是统一的用户输入协议。Runtime 拥有 `user-input` 边界适配器，负责把文本、图片、文档、本地文件和远程 URL 归一化为内部消息块，并集中处理 media type、artifact、大小和安全限制。
 
-`bash` 是 Runtime 的原生能力，而不是可插拔工具。SDK 当前不提供通用工具注入点。
+`CommandHost` 是执行环境的抽象。terminal 只是第一个 host，负责 shell 和 PTY 命令；未来 browser、容器、Node runtime 或远程环境可以实现同一个协议。Host 负责描述自己的输入 schema、发现和执行命令，Runtime 不维护命令注册表。
 
 Skill 是上层的领域说明和操作手册。它不新增执行通道，也不改变 Agent 内核；宿主应用负责选择 Skill，并把它们组合成最终的 system prompt。
 
-Runtime 也提供 `AgentExtension` 扩展点。扩展可以检查或改写 ModelClient 请求、检查或改写 ModelClient 响应、以及包装内置 terminal 工具调用，但不能新增工具或替换 terminal 执行语义。
+Runtime 也提供 `AgentExtension` 扩展点。扩展可以检查或改写 ModelClient 请求、检查或改写 ModelClient 响应、以及包装 command host 工具调用，但不能新增工具或替换 host 执行语义。
 
 ```ts
 import { composeSystem, type Skill } from "mycoder/skills";
@@ -35,7 +35,7 @@ const agent = new SingleAgent({
   name: "coder",
   modelClient,
   system: composeSystem({
-    base: "你是终端Agent，通过bash工具完成用户任务。",
+    base: "你是终端Agent，通过command工具完成用户任务。",
     skills: [repoSkill],
   }),
 });
@@ -63,7 +63,7 @@ frontmatter 必须位于文件开头，支持基本的 `key: value` 和引号值
 
 ## Agent Extension
 
-`AgentExtension` 是 Runtime 的外部扩展点，用来承载横切能力，例如请求审计、日志脱敏、token 用量统计或 terminal 命令包装。
+`AgentExtension` 是 Runtime 的外部扩展点，用来承载横切能力，例如请求审计、日志脱敏、token 用量统计或 command 调用包装。
 
 ```ts
 import type { AgentExtension } from "mycoder";
@@ -228,13 +228,13 @@ Runtime 层
   维护会话消息
   运行 Agent extensions
   调用 ModelClient
-  执行内置 terminal 工具循环
+  执行 command host 工具循环
       ↓
 ModelClient 层
   负责模型 API 协议转换
 ```
 
-Agent 层依赖 Runtime；Runtime 不依赖 Skill 层。Skill 层不新增工具或执行通道。所有实际命令仍然通过 Runtime 原生的 terminal 执行。
+Agent 层依赖 Runtime；Runtime 不依赖 Skill 层。Skill 层不新增工具或执行通道。所有实际命令都通过 Runtime 的 `CommandHost` 执行。
 
 ## 安装和构建
 
@@ -286,7 +286,7 @@ const modelClient = new Anthropic({
 const agent = new SingleAgent({
   name: "terminal-agent",
   modelClient,
-  system: "你是终端Agent，用bash工具执行命令完成任务，用中文简洁回答。",
+  system: "你是终端Agent，用command工具执行命令完成任务，用中文简洁回答。",
 });
 
 agent.on("text", ({ text }) => {
@@ -564,8 +564,8 @@ agent.on("tool_end", ({ name, input, output }) => {
 | `model_response` | 收到 ModelClient 规范化响应及其 usage 时 |
 | `text` | 最终响应中的文本合并后触发 |
 | `text_delta` | 内置协议 client 解析到流式文本增量时触发 |
-| `tool_start` | terminal 工具开始执行前 |
-| `tool_end` | terminal 工具执行完成后 |
+| `tool_start` | command host 工具开始执行前 |
+| `tool_end` | command host 工具执行完成后 |
 | `context_pressure` | 每次 ModelClient 调用前上下文压力检查后 |
 | `context_compacted` | fallback 压缩改变了消息历史 |
 | `end` | 本次 `run()` 正常完成 |
@@ -583,7 +583,7 @@ dispose(); // 取消订阅
 
 ## 中断
 
-Agent 内部管理 `AbortController`。调用 `abort()` 会取消模型请求，并终止正在运行的 terminal 命令。
+Agent 内部管理 `AbortController`。调用 `abort()` 会取消模型请求，并终止正在运行的 command。
 
 ```ts
 setTimeout(() => agent.abort(), 10_000);
@@ -659,7 +659,7 @@ const modelClient: ModelClient = {
 `stopReason` 当前有两个值：
 
 - `end`：最终回答完成。
-- `tool_call`：模型请求执行工具，Agent 会执行 terminal 命令并继续循环。
+- `tool_call`：模型请求执行工具，Agent 会执行 command host 调用并继续循环。
 
 转换层负责把内部 block 转成目标模型协议。例如 `Anthropic` 会把内部 `tool_call` 映射为 Anthropic 的 `tool_use`；`OpenAIChat` 映射到 Chat Completions 的 `tool_calls`；`OpenAIResponses` 映射到 Responses API 的 `function_call` / `function_call_output`。
 
@@ -710,8 +710,13 @@ src/
 │   ├── messages.ts       # 内部消息/block 格式
 │   ├── model-client.ts      # 通用 ModelClient 接口
 │   ├── session.ts       # 会话快照和存储协议
-│   ├── terminal.ts       # bash terminal 工具
 │   └── index.ts
+├── command/
+│   ├── index.ts          # CommandHost 协议
+│   └── shell/
+│       ├── index.ts      # terminal host
+│       ├── pty.ts        # PTY transport 和 mcpty JSON 协议
+│       └── runner.ts     # 非 TTY shell runner
 ├── clients/
     ├── anthropic.ts    # Anthropic 协议转换层
     ├── openai-chat.ts # OpenAI Chat Completions 协议客户端

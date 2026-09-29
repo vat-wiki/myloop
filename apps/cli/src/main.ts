@@ -3,16 +3,12 @@ import { homedir } from "node:os";
 import { sep } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
-import { SingleAgent, createUserInputAdapter } from "mycoder/agent";
-import { Anthropic } from "mycoder/clients/anthropic";
-import { OpenAIChat } from "mycoder/clients/openai-chat";
-import { OpenAIResponses } from "mycoder/clients/openai-responses";
-import { createAgentLogger } from "mycoder/runtime";
-import type { ModelClient } from "mycoder/runtime";
+import type { SingleAgent } from "mycoder/agent";
+import { createAppAgent } from "@mycoder/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
 import { composeCliSystem, loadAgentsInstructions, loadSystemPrompt } from "./prompt.js";
 import { runTask, errorText } from "./run.js";
-import { createCliSessionId, FileSessionStore } from "./session.js";
+import { createCliSessionId } from "./session.js";
 
 export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)): Promise<number> {
   let options: CliOptions;
@@ -48,23 +44,22 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       options.systemPromptEnabled ? loadSystemPrompt(options.systemPrompt) : Promise.resolve(""),
       options.systemPromptEnabled ? loadAgentsInstructions() : Promise.resolve(""),
     ]);
-    const inputAdapter = createUserInputAdapter({ allowLocalFiles: options.allowLocalFiles });
-    const sessionStore = new FileSessionStore({ cwd: process.cwd() });
-    const logger = options.log
-      ? await createAgentLogger({
-        directory: ".agents/mycoder/logs",
-        metadata: { protocol: options.protocol, model: options.model },
-      })
-      : undefined;
-    const modelClient = createModelClient(options, process.env, inputAdapter.artifactStore);
-    const agent = new SingleAgent({
+    const { agent } = await createAppAgent({
       name: "cli-agent",
-      modelClient,
-      input: inputAdapter,
+      protocol: options.protocol,
+      model: options.model,
+      apiKey: options.apiKey,
+      env: process.env,
+      baseURL: options.baseURL,
+      contextWindowTokens: options.contextWindowTokens,
+      maxTokens: options.maxTokens,
+      thinking: options.thinking,
+      thinkingBudgetTokens: options.thinkingBudgetTokens,
+      allowLocalFiles: options.allowLocalFiles,
       system: composeCliSystem({ systemPrompt, agentsInstructions }),
-      extensions: logger ? [logger.extension] : [],
+      logger: options.log,
       sessionId: options.sessionId ?? createCliSessionId(),
-      sessionStore,
+      cwd: process.cwd(),
     });
     if (options.sessionId) await agent.loadSession();
 
@@ -167,48 +162,6 @@ export function formatInteractivePrompt(cwd: string, home = homedir()): string {
 
 function isColorEnabled(env: NodeJS.ProcessEnv, output: NodeJS.WriteStream): boolean {
   return !env.NO_COLOR && Boolean(output.isTTY);
-}
-
-function createModelClient(
-  options: CliOptions,
-  env: NodeJS.ProcessEnv,
-  artifactStore: ReturnType<typeof createUserInputAdapter>["artifactStore"],
-): ModelClient {
-  const httpOptions = {
-    baseURL: options.baseURL,
-    artifactStore,
-  };
-  const apiKey = options.apiKey ?? env[
-    options.protocol === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"
-  ];
-
-  if (options.protocol === "anthropic") {
-    return new Anthropic({
-      ...httpOptions,
-      apiKey,
-      model: options.model,
-      maxTokens: options.maxTokens,
-      contextWindowTokens: options.contextWindowTokens,
-      thinkingBudgetTokens: options.thinking ? options.thinkingBudgetTokens ?? 4_096 : undefined,
-    });
-  }
-  if (options.protocol === "openai-chat") {
-    return new OpenAIChat({
-      ...httpOptions,
-      apiKey,
-      model: options.model,
-      maxTokens: options.maxTokens,
-      contextWindowTokens: options.contextWindowTokens,
-      reasoning: options.thinking ? { effort: "medium", summary: "auto" } : undefined,
-    });
-  }
-  return new OpenAIResponses({
-    ...httpOptions,
-      apiKey,
-      model: options.model,
-      maxTokens: options.maxTokens,
-      contextWindowTokens: options.contextWindowTokens,
-  });
 }
 
 if (import.meta.url === new URL(`file://${process.argv[1] ?? ""}`).href) {

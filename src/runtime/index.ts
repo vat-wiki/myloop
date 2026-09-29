@@ -15,18 +15,12 @@ export * from "./user-input.js";
 export type { AgentEventMap, EventListener } from "./events.js";
 export { EventBus } from "./events.js";
 export {
-  createTerminalTool,
-  formatCommandResult,
-  formatTerminalSnapshot,
-  runPty,
-  runShell,
-  type CommandResult,
-  type CommandStatus,
-  type RunShellOptions,
-  type RunPtyOptions,
-  type TerminalSnapshot,
-  type TerminalStatus,
-} from "./terminal.js";
+  createCommandHostHandler,
+  createCommandHostTool,
+  type CommandHost,
+  type CommandHostInput,
+  type CommandInvocationContext,
+} from "../command/index.js";
 export type {
   ModelClient,
   ModelRequest,

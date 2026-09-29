@@ -5,13 +5,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "workspaces": [
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc && npm run build --workspace apps/cli && npm run build --workspace apps/tui",
-    "typecheck": "tsc --noEmit && npm run typecheck --workspace apps/cli && npm run typecheck --workspace apps/tui",
-    "test": "vitest run && npm run test --workspace apps/cli && npm run test --workspace apps/tui",
+    "build": "npm run clean && tsc && npm run build --workspace @mycoder/app-sdk && npm run build --workspace apps/cli && npm run build --workspace packages/pty && npm run build --workspace apps/tui",
+    "typecheck": "tsc --noEmit && npm run build --workspace @mycoder/app-sdk && npm run typecheck --workspace packages/pty && npm run typecheck --workspace apps/cli && npm run typecheck --workspace apps/tui",
+    "test": "vitest run && npm run test --workspace @mycoder/app-sdk && npm run test --workspace packages/pty && npm run test --workspace apps/cli && npm run test --workspace apps/tui",
     "cli": "npm run build --workspace apps/cli && node apps/cli/dist/main.js",
     "tui": "npm run build && node --experimental-ffi apps/tui/dist/main.js",
     "prepublishOnly": "npm run build"
@@ -37,9 +38,13 @@
       "types": "./dist/runtime/messages.d.ts",
       "default": "./dist/runtime/messages.js"
     },
-    "./terminal": {
-      "types": "./dist/runtime/terminal.d.ts",
-      "default": "./dist/runtime/terminal.js"
+    "./command": {
+      "types": "./dist/command/index.d.ts",
+      "default": "./dist/command/index.js"
+    },
+    "./command/shell": {
+      "types": "./dist/command/shell/index.d.ts",
+      "default": "./dist/command/shell/index.js"
     },
     "./clients/anthropic": {
       "types": "./dist/clients/anthropic.d.ts",
@@ -79,18 +84,6 @@
     },
     "./package.json": "./package.json"
   },
-  "peerDependencies": {
-    "@xterm/headless": "^6.0.0",
-    "node-pty": "^1.1.0"
-  },
-  "peerDependenciesMeta": {
-    "@xterm/headless": {
-      "optional": true
-    },
-    "node-pty": {
-      "optional": true
-    }
-  },
   "allowScripts": {
     "node-pty@1.1.0": true
   },
@@ -99,9 +92,7 @@
     "dist"
   ],
   "devDependencies": {
-    "@xterm/headless": "^6.0.0",
     "@types/node": "^26.6.2",
-    "node-pty": "^1.1.0",
     "typescript": "^7.0.2",
     "vitest": "^3.2.7"
   }

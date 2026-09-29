@@ -3,6 +3,8 @@ import { AgentRuntime } from "../../src/runtime/agent.js";
 import { createInMemoryArtifactStore } from "../../src/runtime/artifacts.js";
 import { textBlock, thinkingBlock, toolCallBlock, toolResultBlock } from "../../src/runtime/messages.js";
 import type { ModelClient, ModelRequest, ModelResponse } from "../../src/runtime/model-client.js";
+import type { CommandHost } from "../../src/command/index.js";
+import { ShellCommandHost } from "../../src/command/shell/index.js";
 import type { AgentEventMap } from "../../src/runtime/events.js";
 import type { RuntimeSessionStore } from "../../src/runtime/session.js";
 
@@ -87,7 +89,7 @@ describe("Agent", () => {
   it("executes wrapped tools and continues the modelClient loop", async () => {
     const complete = vi.fn()
       .mockResolvedValueOnce(response([
-        toolCallBlock("call-1", "bash", { command: "pwd" }),
+        toolCallBlock("call-1", "command", { command: "pwd" }),
       ], "tool_call", { inputTokens: 10, outputTokens: 2, totalTokens: 12 }))
       .mockResolvedValueOnce(response(
         [textBlock("finished")],
@@ -99,6 +101,7 @@ describe("Agent", () => {
     const agent = new AgentRuntime({
       modelClient: createModelClient(complete),
       extensions: [{ name: "test", wrapToolCall }],
+      commandHost: new ShellCommandHost(),
     });
     const events: Array<keyof AgentEventMap> = [];
     agent.on("message", () => events.push("message"));
@@ -110,7 +113,7 @@ describe("Agent", () => {
     await agent.run("run command");
 
     expect(wrapToolCall).toHaveBeenCalledWith({
-      name: "bash",
+      name: "command",
       definition: agent.tools[0],
       handler: expect.any(Function),
     });
@@ -150,6 +153,46 @@ describe("Agent", () => {
       toolCallId: "call-1",
       content: "未知工具: missing",
       isError: true,
+    });
+  });
+
+  it("routes invocations through an injected command host", async () => {
+    const browserHost: CommandHost = {
+      id: "browser",
+      toolName: "browser",
+      description: "Run browser commands",
+      inputSchema: {
+        type: "object",
+        properties: { action: { type: "string" } },
+        required: ["action"],
+      },
+      run: async (input, context) => ({
+        action: input.action,
+        aborted: context.signal?.aborted ?? false,
+      }),
+    };
+    const complete = vi.fn()
+      .mockResolvedValueOnce(response([
+        toolCallBlock("call-1", "browser", { action: "open" }),
+      ], "tool_call"))
+      .mockResolvedValueOnce(response([textBlock("opened")]));
+    const agent = new AgentRuntime({
+      modelClient: createModelClient(complete),
+      commandHost: browserHost,
+    });
+
+    await agent.run("open browser");
+
+    expect(agent.tools).toEqual([{
+      name: "browser",
+      description: "Run browser commands",
+      parameters: browserHost.inputSchema,
+    }]);
+    expect(agent.messages[2]?.content[0]).toEqual({
+      type: "tool_result",
+      toolCallId: "call-1",
+      content: { action: "open", aborted: false },
+      isError: false,
     });
   });
 

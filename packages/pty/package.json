@@ -1,0 +1,28 @@
+{
+  "name": "@mycoder/pty",
+  "version": "0.1.0",
+  "description": "One-shot PTY command runner with a JSON protocol",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "bin": {
+    "mcpty": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/main.js",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7"
+  }
+}

@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mycoder/app-sdk": "file:../../packages/app-sdk",
     "@opentui/core": "^0.5.12",
     "@opentui/solid": "^0.5.12",
     "mycoder": "file:../../",
