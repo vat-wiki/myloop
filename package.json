@@ -11,9 +11,10 @@
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "npm run clean && tsc && npm run build --workspace @mycoder/app-sdk && npm run build --workspace apps/cli && npm run build --workspace packages/pty && npm run build --workspace apps/tui",
+    "build:cli": "tsc && npm run build --workspace @mycoder/app-sdk && npm run build --workspace apps/cli",
     "typecheck": "tsc --noEmit && npm run build --workspace @mycoder/app-sdk && npm run typecheck --workspace packages/pty && npm run typecheck --workspace apps/cli && npm run typecheck --workspace apps/tui",
     "test": "vitest run && npm run test --workspace @mycoder/app-sdk && npm run test --workspace packages/pty && npm run test --workspace apps/cli && npm run test --workspace apps/tui",
-    "cli": "npm run build --workspace apps/cli && node apps/cli/dist/main.js",
+    "cli": "npm run build:cli && node apps/cli/dist/main.js",
     "tui": "npm run build && node --experimental-ffi apps/tui/dist/main.js",
     "prepublishOnly": "npm run build"
   },

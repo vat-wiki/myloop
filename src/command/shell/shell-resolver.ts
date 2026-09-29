@@ -15,6 +15,9 @@ export async function resolveShell(command: string): Promise<ResolvedShell> {
     const executable = override.includes("/") || override.includes("\\")
       ? override
       : await findExecutableInPath(override) ?? override;
+    if (!await isExecutable(executable)) {
+      throw new Error(`MYCODER_SHELL is not executable: ${override}`);
+    }
     return { command: executable, args: shellInvocationArgs(shellName, command) };
   }
 

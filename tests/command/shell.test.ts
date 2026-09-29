@@ -47,6 +47,21 @@ describe("runShell", () => {
     }
   });
 
+  it("rejects an unusable shell override instead of spawning it", async () => {
+    const previousShell = process.env.MYCODER_SHELL;
+    process.env.MYCODER_SHELL = "/path/to/missing-shell";
+
+    try {
+      await expect(runShell({
+        command: "true",
+        timeout: 1_000,
+      })).rejects.toThrow("MYCODER_SHELL is not executable: /path/to/missing-shell");
+    } finally {
+      if (previousShell === undefined) delete process.env.MYCODER_SHELL;
+      else process.env.MYCODER_SHELL = previousShell;
+    }
+  });
+
   it("returns partial output after the idle timeout", async () => {
     const output = await runShell({
       command: "echo before-idle; sleep 10",
