@@ -84,7 +84,7 @@ describe("parseSkill", () => {
   });
 
   async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-skill-"));
+    const directory = await mkdtemp(join(tmpdir(), "myanne-skill-"));
     temporaryDirectories.push(directory);
     return directory;
   }

@@ -1,8 +1,8 @@
 {
-  "name": "mycoder-docs",
+  "name": "myanne-docs",
   "version": "1.0.0",
   "private": true,
-  "description": "mycoder 文档网站",
+  "description": "myanne 文档网站",
   "type": "module",
   "scripts": {
     "dev": "vitepress dev docs",

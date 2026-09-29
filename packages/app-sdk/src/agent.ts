@@ -1,6 +1,6 @@
-import { createUserInputAdapter, SingleAgent } from "mycoder/agent";
-import { ShellCommandHost } from "mycoder/command/shell";
-import type { AgentExtension, CommandHost, RuntimeSessionStore } from "mycoder/runtime";
+import { createUserInputAdapter, SingleAgent } from "myanne/agent";
+import { ShellCommandHost } from "myanne/command/shell";
+import type { AgentExtension, CommandHost, RuntimeSessionStore } from "myanne/runtime";
 import { createAppLogger } from "./logging.js";
 import { createAppModelClient, type AppProtocol } from "./model.js";
 import { FileSessionStore } from "./session.js";

@@ -1,4 +1,4 @@
-import type { AgentConfig } from "mycoder/config";
+import type { AgentConfig } from "myanne/config";
 
 export type CliProtocol = "anthropic" | "openai-chat" | "openai-responses";
 
@@ -22,8 +22,8 @@ export type CliOptions = {
   help: boolean;
 };
 
-export type { AgentConfig, ConfigProtocol, ConfigSources } from "mycoder/config";
-export { loadAgentConfig } from "mycoder/config";
+export type { AgentConfig, ConfigProtocol, ConfigSources } from "myanne/config";
+export { loadAgentConfig } from "myanne/config";
 
 const PROTOCOLS: ReadonlyArray<CliProtocol> = [
   "anthropic",
@@ -159,11 +159,11 @@ export function parseCliArgs(
 
 export function formatCliHelp(): string {
   return [
-    "mycoder CLI",
+    "myanne CLI",
     "",
     "Usage:",
-    "  mycoder [options] <task>     Run one task and print the result",
-    "  mycoder [options]            Start an interactive session",
+    "  myanne [options] <task>     Run one task and print the result",
+    "  myanne [options]            Start an interactive session",
     "",
     "Options:",
     "  --protocol <anthropic|openai-chat|openai-responses>",

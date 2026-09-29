@@ -82,7 +82,7 @@ describe("CLI arguments", () => {
 
   it("renders help without requiring a model", () => {
     expect(parseCliArgs(["--help"]).help).toBe(true);
-    expect(formatCliHelp()).toContain("mycoder CLI");
+    expect(formatCliHelp()).toContain("myanne CLI");
   });
 
   it("rejects invalid arguments", () => {
@@ -96,7 +96,7 @@ describe("CLI arguments", () => {
 
 describe("interactive prompt", () => {
   it("abbreviates the home directory", () => {
-    expect(formatInteractivePrompt("/Users/dev/projects/mycoder", "/Users/dev")).toBe("~/projects/mycoder ❯ ");
+    expect(formatInteractivePrompt("/Users/dev/projects/myanne", "/Users/dev")).toBe("~/projects/myanne ❯ ");
   });
 
   it("uses the original directory outside home", () => {

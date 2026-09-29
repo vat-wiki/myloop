@@ -31,7 +31,7 @@ const PROTOCOLS: ReadonlyArray<ConfigProtocol> = [
   "openai-responses",
 ];
 const AGENTS_DIRECTORY = ".agents";
-const CONFIG_FILENAME = "mycoder.json";
+const CONFIG_FILENAME = "myanne.json";
 const DEPRECATED_CONFIG_FIELDS = new Set([
   "maxTokens",
   "timeoutMs",

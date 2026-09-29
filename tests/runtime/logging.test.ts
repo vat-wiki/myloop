@@ -70,7 +70,7 @@ describe("runtime logger", () => {
   });
 
   async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-runtime-logging-"));
+    const directory = await mkdtemp(join(tmpdir(), "myanne-runtime-logging-"));
     temporaryDirectories.push(directory);
     return directory;
   }

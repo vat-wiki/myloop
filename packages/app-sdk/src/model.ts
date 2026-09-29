@@ -1,7 +1,7 @@
-import { Anthropic } from "mycoder/clients/anthropic";
-import { OpenAIChat } from "mycoder/clients/openai-chat";
-import { OpenAIResponses } from "mycoder/clients/openai-responses";
-import type { ArtifactStore, ModelClient } from "mycoder/runtime";
+import { Anthropic } from "myanne/clients/anthropic";
+import { OpenAIChat } from "myanne/clients/openai-chat";
+import { OpenAIResponses } from "myanne/clients/openai-responses";
+import type { ArtifactStore, ModelClient } from "myanne/runtime";
 
 export type AppProtocol = "anthropic" | "openai-chat" | "openai-responses";
 

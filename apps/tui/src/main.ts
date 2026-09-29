@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --experimental-ffi
-import type { SingleAgent } from "mycoder/agent";
-import type { RuntimeSessionStore } from "mycoder/runtime";
-import { createAppAgent } from "@mycoder/app-sdk";
+import type { SingleAgent } from "myanne/agent";
+import type { RuntimeSessionStore } from "myanne/runtime";
+import { createAppAgent } from "@myanne/app-sdk";
 import { runTuiApp } from "./app.js";
 import type { TuiLogger } from "./logging.js";
 import {

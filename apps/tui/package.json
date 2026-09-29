@@ -1,5 +1,5 @@
 {
-  "name": "@mycoder/tui",
+  "name": "@myanne/tui",
   "version": "1.0.0",
   "private": true,
   "engines": {
@@ -7,7 +7,7 @@
   },
   "type": "module",
   "bin": {
-    "mycoder-tui": "./dist/main.js"
+    "myanne-tui": "./dist/main.js"
   },
   "scripts": {
     "build": "node build.mjs",
@@ -16,10 +16,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mycoder/app-sdk": "file:../../packages/app-sdk",
+    "@myanne/app-sdk": "file:../../packages/app-sdk",
     "@opentui/core": "^0.5.12",
     "@opentui/solid": "^0.5.12",
-    "mycoder": "file:../../",
+    "myanne": "file:../../",
     "solid-js": "^1.9.12"
   },
   "devDependencies": {

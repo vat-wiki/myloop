@@ -9,14 +9,14 @@ export type ResolvedShell = {
 };
 
 export async function resolveShell(command: string): Promise<ResolvedShell> {
-  const override = process.env.MYCODER_SHELL?.trim();
+  const override = process.env.MYANNE_SHELL?.trim();
   if (override) {
     const shellName = basename(override).toLowerCase();
     const executable = override.includes("/") || override.includes("\\")
       ? override
       : await findExecutableInPath(override) ?? override;
     if (!await isExecutable(executable)) {
-      throw new Error(`MYCODER_SHELL is not executable: ${override}`);
+      throw new Error(`MYANNE_SHELL is not executable: ${override}`);
     }
     return { command: executable, args: shellInvocationArgs(shellName, command) };
   }

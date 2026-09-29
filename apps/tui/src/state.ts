@@ -12,8 +12,8 @@ export const tuiCommands: readonly TuiCommand[] = [
   { command: "/help", description: "Show help" },
   { command: "/usage", description: "Show latest model usage" },
   { command: "/reset", description: "Clear conversation" },
-  { command: "/exit", description: "Exit mycoder" },
-  { command: "/quit", description: "Exit mycoder" },
+  { command: "/exit", description: "Exit myanne" },
+  { command: "/quit", description: "Exit myanne" },
 ] as const;
 
 export function getTuiCommandSuggestions(value: string): TuiCommand[] {

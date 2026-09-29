@@ -1,7 +1,7 @@
 node_modules/
 dist/
 config.json
-.agents/mycoder.json
-**/.agents/mycoder.json
-**/.agents/mycoder/logs/
-**/.agents/mycoder/sessions/
+.agents/myanne.json
+**/.agents/myanne.json
+**/.agents/myanne/logs/
+**/.agents/myanne/sessions/

@@ -1,6 +1,6 @@
 # API 概览
 
-`mycoder` 的导出面如下：
+`myanne` 的导出面如下：
 
 ## 包入口
 
@@ -34,25 +34,25 @@ import {
   documentBlock,
   InMemoryArtifactStore,
   sumTokenCounts,
-} from "mycoder";
+} from "myanne";
 ```
 
 ## 子路径导出
 
 | 子路径 | 内容 |
 | --- | --- |
-| `mycoder` | 全部公共 API（root） |
-| `mycoder/agent` | `SingleAgent`、`CompositeAgent`、`AgentSession`、UserInput 相关 |
-| `mycoder/runtime` | `AgentRuntime`、事件、terminal、messages 等 |
-| `mycoder/messages` | 内部消息/block 格式 |
-| `mycoder/terminal` | `createTerminalTool`、`runPty`、`runShell` |
-| `mycoder/clients/anthropic` | `Anthropic` |
-| `mycoder/clients/openai-chat` | `OpenAIChat` |
-| `mycoder/clients/openai-responses` | `OpenAIResponses` |
-| `mycoder/skills` | `composeSystem`、`parseSkill` |
-| `mycoder/composite` | `CompositeAgent` |
-| `mycoder/session` | `AgentSession` |
-| `mycoder/agent/context`、`mycoder/runtime/context` | 上下文压力估算与 fallback |
+| `myanne` | 全部公共 API（root） |
+| `myanne/agent` | `SingleAgent`、`CompositeAgent`、`AgentSession`、UserInput 相关 |
+| `myanne/runtime` | `AgentRuntime`、事件、terminal、messages 等 |
+| `myanne/messages` | 内部消息/block 格式 |
+| `myanne/terminal` | `createTerminalTool`、`runPty`、`runShell` |
+| `myanne/clients/anthropic` | `Anthropic` |
+| `myanne/clients/openai-chat` | `OpenAIChat` |
+| `myanne/clients/openai-responses` | `OpenAIResponses` |
+| `myanne/skills` | `composeSystem`、`parseSkill` |
+| `myanne/composite` | `CompositeAgent` |
+| `myanne/session` | `AgentSession` |
+| `myanne/agent/context`、`myanne/runtime/context` | 上下文压力估算与 fallback |
 
 ## Agent 接口
 

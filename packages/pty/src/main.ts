@@ -61,7 +61,7 @@ export function parsePtyArgs(argv: ReadonlyArray<string>): PtyCliOptions {
 
 export function formatPtyHelp(): string {
   return [
-    "Usage: mcpty [options] -- <command> [args...]",
+    "Usage: myanne-pty [options] -- <command> [args...]",
     "",
     "Options:",
     "  --cwd <directory>          working directory",
@@ -83,7 +83,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
   try {
     options = parsePtyArgs(argv);
   } catch (error) {
-    process.stderr.write(`mcpty: ${errorMessage(error)}\n\n${formatPtyHelp()}\n`);
+    process.stderr.write(`myanne-pty: ${errorMessage(error)}\n\n${formatPtyHelp()}\n`);
     return 2;
   }
 
@@ -100,7 +100,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
     process.stdout.write(`${JSON.stringify(snapshot)}\n`);
     return 0;
   } catch (error) {
-    process.stderr.write(`mcpty: ${errorMessage(error)}\n`);
+    process.stderr.write(`myanne-pty: ${errorMessage(error)}\n`);
     return 1;
   }
 }
@@ -125,7 +125,7 @@ function errorMessage(error: unknown): string {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main().catch((error: unknown) => {
-    process.stderr.write(`mcpty: ${errorMessage(error)}\n`);
+    process.stderr.write(`myanne-pty: ${errorMessage(error)}\n`);
     process.exitCode = 1;
   });
 }

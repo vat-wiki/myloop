@@ -3,7 +3,7 @@
 当一个任务需要更大的注意力范围时，可以把多个 `Agent` 组合成一个 `CompositeAgent`。`CompositeAgent` 本身仍然是一个 Agent；它对内由 coordinator 动态决定是否委派任务、委派给谁、以及何时结束。
 
 ```ts
-import { CompositeAgent } from "mycoder/agent";
+import { CompositeAgent } from "myanne/agent";
 
 const compositeAgent = new CompositeAgent({
   name: "repo-agent",

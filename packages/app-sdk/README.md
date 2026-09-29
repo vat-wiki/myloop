@@ -1,6 +1,6 @@
-# @mycoder/app-sdk
+# @myanne/app-sdk
 
-Application-layer building blocks for mycoder agents.
+Application-layer building blocks for myanne agents.
 
 - `createAppAgent` assembles model client, input adapter, command host, logger, and sessions.
 - `FileSessionStore` persists and lists snapshots.

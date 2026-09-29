@@ -43,7 +43,7 @@ const modelClient = new Anthropic({
 
 ```ts
 import axios from "axios";
-import type { HttpTransport } from "mycoder";
+import type { HttpTransport } from "myanne";
 
 const axiosTransport: HttpTransport = async (request) => {
   const response = await axios.request({
@@ -81,7 +81,7 @@ const modelClient = new Anthropic({
 ## 自定义 ModelClient
 
 ```ts
-import type { ModelClient } from "mycoder";
+import type { ModelClient } from "myanne";
 
 const modelClient: ModelClient = {
   async complete({ system, messages, tools, signal }) {

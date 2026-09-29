@@ -55,21 +55,21 @@ export async function runPtyProcess(options: RunPtyOptions): Promise<TerminalSna
 }
 
 async function findPtyHelper(): Promise<string> {
-  const configured = process.env.MYCODER_PTY_BIN?.trim();
+  const configured = process.env.MYANNE_PTY_BIN?.trim();
   if (!configured) {
-    const candidate = await findExecutableInPath("mcpty");
-    if (!candidate) throw new Error("mcpty not found in PATH; install @mycoder/pty or set MYCODER_PTY_BIN");
+    const candidate = await findExecutableInPath("myanne-pty");
+    if (!candidate) throw new Error("myanne-pty not found in PATH; install @myanne/pty or set MYANNE_PTY_BIN");
     return candidate;
   }
 
   if (configured.includes("/") || configured.includes("\\")) {
     const candidate = resolve(configured);
     if (await isExecutable(candidate)) return candidate;
-    throw new Error(`MYCODER_PTY_BIN is not executable: ${configured}`);
+    throw new Error(`MYANNE_PTY_BIN is not executable: ${configured}`);
   }
 
   const candidate = await findExecutableInPath(configured);
-  if (!candidate) throw new Error(`MYCODER_PTY_BIN not found in PATH: ${configured}`);
+  if (!candidate) throw new Error(`MYANNE_PTY_BIN not found in PATH: ${configured}`);
   return candidate;
 }
 
@@ -156,7 +156,7 @@ async function runPtyWithHelper(helper: string, options: RunPtyOptions): Promise
         return;
       }
       if (exitCode !== 0) {
-        fail(new Error(stderr || `mcpty exited with ${exitCode ?? `signal ${exitSignal ?? "unknown"}`}`));
+        fail(new Error(stderr || `myanne-pty exited with ${exitCode ?? `signal ${exitSignal ?? "unknown"}`}`));
         return;
       }
 
@@ -194,7 +194,7 @@ function parseTerminalSnapshot(output: string): TerminalSnapshot {
   const firstNewline = output.indexOf("\n");
   const json = firstNewline === -1 ? output : output.slice(0, firstNewline);
   const value = JSON.parse(json) as unknown;
-  if (!isTerminalSnapshot(value)) throw new Error("mcpty returned an invalid terminal snapshot");
+  if (!isTerminalSnapshot(value)) throw new Error("myanne-pty returned an invalid terminal snapshot");
   return value;
 }
 

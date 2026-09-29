@@ -96,7 +96,7 @@ describe("Agent", () => {
         "end",
         { inputTokens: 25, outputTokens: 4, cacheReadInputTokens: 5 },
       ));
-    const handler = vi.fn(async () => ({ stdout: "/home/dev/mycoder" }));
+    const handler = vi.fn(async () => ({ stdout: "/home/dev/myanne" }));
     const wrapToolCall = vi.fn(() => handler);
     const agent = new AgentRuntime({
       modelClient: createModelClient(complete),
@@ -126,7 +126,7 @@ describe("Agent", () => {
       content: [{
         type: "tool_result",
         toolCallId: "call-1",
-        content: { stdout: "/home/dev/mycoder" },
+        content: { stdout: "/home/dev/myanne" },
         isError: false,
       }],
     });

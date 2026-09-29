@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Skill } from "mycoder/skills";
+import type { Skill } from "myanne/skills";
 
 export type LoadedSkill = Skill & {
   path: string;

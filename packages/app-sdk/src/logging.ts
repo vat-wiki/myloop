@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { createAgentLogger, type AgentLogger } from "mycoder/runtime";
+import { createAgentLogger, type AgentLogger } from "myanne/runtime";
 
 export type AppLoggerOptions = {
   cwd?: string;
@@ -11,7 +11,7 @@ export async function createAppLogger(options: AppLoggerOptions): Promise<AgentL
   const cwd = options.cwd ?? process.cwd();
   return createAgentLogger({
     cwd,
-    directory: join(".agents", "mycoder", "logs"),
+    directory: join(".agents", "myanne", "logs"),
     metadata: {
       protocol: options.protocol,
       model: options.model,

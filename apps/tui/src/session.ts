@@ -4,4 +4,4 @@ export {
   FileSessionStore,
   isValidAppSessionId as isValidTuiSessionId,
   type FileSessionStoreOptions,
-} from "@mycoder/app-sdk";
+} from "@myanne/app-sdk";

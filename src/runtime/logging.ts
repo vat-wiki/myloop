@@ -85,7 +85,7 @@ export class AgentLogger {
       await mkdir(dirname(this.path), { recursive: true });
       await appendFile(this.path, `${serializeEvent(event)}\n`, "utf8");
     }).catch((error) => {
-      process.stderr.write(`failed to write mycoder log: ${errorText(error)}\n`);
+      process.stderr.write(`failed to write myanne log: ${errorText(error)}\n`);
     });
     await this.#appendQueue;
   }

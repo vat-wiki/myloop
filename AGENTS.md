@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`mycoder` is a TypeScript SDK for agent sessions, model calls, extension hooks, and a built-in terminal tool. Source code lives in `src/`:
+`myanne` is a TypeScript SDK for agent sessions, model calls, extension hooks, and a built-in terminal tool. Source code lives in `src/`:
 
 - `src/agent/` — public agent abstractions, `SingleAgent`, `CompositeAgent`, and user-input normalization.
 - `src/runtime/` — runtime loop, message model, model-client contract, context compaction, events, extensions, and PTY execution.

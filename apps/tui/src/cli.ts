@@ -118,9 +118,9 @@ export function parseTuiArgs(
 
 export function formatTuiHelp(): string {
   return [
-    "mycoder TUI",
+    "myanne TUI",
     "",
-    "Usage: mycoder-tui [options]",
+    "Usage: myanne-tui [options]",
     "",
     "Options:",
     "  --protocol <anthropic|openai-chat|openai-responses>",

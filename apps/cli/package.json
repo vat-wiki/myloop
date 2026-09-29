@@ -1,5 +1,5 @@
 {
-  "name": "@mycoder/cli",
+  "name": "@myanne/cli",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -7,7 +7,7 @@
   },
   "type": "module",
   "bin": {
-    "mycoder": "./dist/main.js"
+    "myanne": "./dist/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/main.js",
@@ -16,8 +16,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mycoder/app-sdk": "file:../../packages/app-sdk",
-    "mycoder": "file:../../"
+    "@myanne/app-sdk": "file:../../packages/app-sdk",
+    "myanne": "file:../../"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

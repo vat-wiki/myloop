@@ -3,7 +3,7 @@
 `AgentExtension` 是 Runtime 的外部扩展点，用来承载横切能力，例如请求审计、日志脱敏、token 用量统计或 terminal 命令包装。
 
 ```ts
-import type { AgentExtension } from "mycoder";
+import type { AgentExtension } from "myanne";
 
 const auditExtension: AgentExtension = {
   name: "audit",

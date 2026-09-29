@@ -52,7 +52,7 @@ describe("createUserInputAdapter", () => {
   });
 
   it("uses a default artifact store for allowed local files", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-input-"));
+    const directory = await mkdtemp(join(tmpdir(), "myanne-input-"));
     temporaryDirectories.push(directory);
     const imagePath = join(directory, "image.png");
     const documentPath = join(directory, "report.pdf");
@@ -71,7 +71,7 @@ describe("createUserInputAdapter", () => {
   });
 
   it("stores allowed local files as artifacts", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-artifact-"));
+    const directory = await mkdtemp(join(tmpdir(), "myanne-artifact-"));
     temporaryDirectories.push(directory);
     const imagePath = join(directory, "image.png");
     const documentPath = join(directory, "report.pdf");
@@ -95,7 +95,7 @@ describe("createUserInputAdapter", () => {
   });
 
   it("enforces remote and local file policies", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-input-policy-"));
+    const directory = await mkdtemp(join(tmpdir(), "myanne-input-policy-"));
     temporaryDirectories.push(directory);
     const largePath = join(directory, "large.png");
     await writeFile(largePath, "12345");
@@ -117,7 +117,7 @@ describe("createUserInputAdapter", () => {
   });
 
   it("enforces the total input byte budget", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-input-total-"));
+    const directory = await mkdtemp(join(tmpdir(), "myanne-input-total-"));
     temporaryDirectories.push(directory);
     const firstPath = join(directory, "first.png");
     const secondPath = join(directory, "second.png");

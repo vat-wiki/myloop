@@ -1,8 +1,8 @@
 import { createCliRenderer, type CliRenderer } from "@opentui/core";
 import { render } from "@opentui/solid";
-import type { SingleAgent } from "mycoder/agent";
+import type { SingleAgent } from "myanne/agent";
 import type { TuiLogger } from "./logging.js";
-import type { RuntimeSessionStore } from "mycoder/runtime";
+import type { RuntimeSessionStore } from "myanne/runtime";
 import { TuiApp } from "./ui.js";
 
 export type TuiAppOptions = {

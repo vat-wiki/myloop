@@ -3,8 +3,8 @@ import { testRender } from "@opentui/solid";
 import type { CapturedSpan } from "@opentui/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TuiApp } from "../src/ui.js";
-import type { SingleAgent } from "mycoder/agent";
-import { textBlock } from "mycoder/messages";
+import type { SingleAgent } from "myanne/agent";
+import { textBlock } from "myanne/messages";
 
 type AgentHandler = (event: any) => void;
 
@@ -75,7 +75,7 @@ describe("TUI visual verification", () => {
 
     const spans = collectSpans(setup.captureSpans());
 
-    expect(findSpan(spans, { text: "mycoder", fg: "#22d3ee", bold: true })).toBeDefined();
+    expect(findSpan(spans, { text: "myanne", fg: "#22d3ee", bold: true })).toBeDefined();
     expect(findSpan(spans, { text: "test-model" })).toBeDefined();
     expect(findSpan(spans, { text: "Describe" })).toBeDefined();
   });

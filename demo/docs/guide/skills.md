@@ -7,7 +7,7 @@ Skill 是上层的领域说明和操作手册。它不新增执行通道，也�
 ## 定义与组合 Skill
 
 ```ts
-import { composeSystem, type Skill } from "mycoder/skills";
+import { composeSystem, type Skill } from "myanne/skills";
 
 const repoSkill: Skill = {
   name: "repo",
@@ -36,7 +36,7 @@ const agent = new SingleAgent({
 `SKILL.md` 也可以直接解析为 `Skill`。`parseSkill` 接受文件路径或 Markdown 内容；以 `---` 开头的输入会按内容解析，否则按路径读取。
 
 ```ts
-import { parseSkill } from "mycoder/skills";
+import { parseSkill } from "myanne/skills";
 
 const skill = await parseSkill(".agents/skills/repo/SKILL.md");
 

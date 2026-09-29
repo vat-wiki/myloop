@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { composeSystem, loadAgentsInstructions } from "@mycoder/app-sdk";
+import { composeSystem, loadAgentsInstructions } from "@myanne/app-sdk";
 
 export const cliBasePrompt = "你是终端Agent。用command工具完成用户任务，用中文简洁回答。";
 

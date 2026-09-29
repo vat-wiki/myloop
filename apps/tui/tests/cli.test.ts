@@ -99,6 +99,6 @@ describe("TUI CLI", () => {
     expect(() => parseTuiArgs([], {})).toThrow("model is required");
     expect(() => parseTuiArgs(["--max-tokens", "128"])).toThrow("unknown argument: --max-tokens");
     expect(() => parseTuiArgs(["--context-window-tokens", "0"])).toThrow("context window tokens must be a positive integer");
-    expect(formatTuiHelp()).toContain("mycoder TUI");
+    expect(formatTuiHelp()).toContain("myanne TUI");
   });
 });

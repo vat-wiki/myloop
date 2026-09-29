@@ -1,13 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { composeSystem, loadAgentsInstructions, readInstructions, type LoadedSkill } from "@mycoder/app-sdk";
+import { composeSystem, loadAgentsInstructions, readInstructions, type LoadedSkill } from "@myanne/app-sdk";
 import { loadSkills } from "./skills.js";
 
 export const tuiBasePrompt = "你是终端Agent。用command工具完成用户任务，用中文简洁回答。";
 
 const coreInstructionsPath = fileURLToPath(new URL("../system.md", import.meta.url));
-const systemPromptPath = join(".agents", "mycoder", "system.md");
+const systemPromptPath = join(".agents", "myanne", "system.md");
 
 export type LoadSystemInstructionsOptions = {
   cwd?: string;

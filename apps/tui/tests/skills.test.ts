@@ -9,7 +9,7 @@ import {
   loadSystemInstructions,
   loadTuiSkills,
 } from "../src/system-prompt.js";
-import { parseSkillContents } from "mycoder/skills";
+import { parseSkillContents } from "myanne/skills";
 import { loadSkills } from "../src/skills.js";
 
 const temporaryDirectories: Array<string> = [];
@@ -22,7 +22,7 @@ afterEach(async () => {
 });
 
 async function makeTemporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "mycoder-skills-"));
+  const directory = await mkdtemp(join(tmpdir(), "myanne-skills-"));
   temporaryDirectories.push(directory);
   return directory;
 }
@@ -96,10 +96,10 @@ describe("TUI system prompt", () => {
     const root = await makeTemporaryDirectory();
     const nested = join(root, "packages", "app");
     await mkdir(nested, { recursive: true });
-    await mkdir(join(home, ".agents", "mycoder"), { recursive: true });
-    await mkdir(join(root, ".agents", "mycoder"), { recursive: true });
-    await writeFile(join(home, ".agents", "mycoder", "system.md"), "Global prompt.");
-    await writeFile(join(root, ".agents", "mycoder", "system.md"), "Root prompt.");
+    await mkdir(join(home, ".agents", "myanne"), { recursive: true });
+    await mkdir(join(root, ".agents", "myanne"), { recursive: true });
+    await writeFile(join(home, ".agents", "myanne", "system.md"), "Global prompt.");
+    await writeFile(join(root, ".agents", "myanne", "system.md"), "Root prompt.");
 
     await expect(loadSystemInstructions({ cwd: nested, home })).resolves.toBe("Root prompt.");
   });
@@ -107,8 +107,8 @@ describe("TUI system prompt", () => {
   it("falls back to a global system prompt and the built-in prompt", async () => {
     const home = await makeTemporaryDirectory();
     const root = await makeTemporaryDirectory();
-    await mkdir(join(home, ".agents", "mycoder"), { recursive: true });
-    await writeFile(join(home, ".agents", "mycoder", "system.md"), "Global prompt.");
+    await mkdir(join(home, ".agents", "myanne"), { recursive: true });
+    await writeFile(join(home, ".agents", "myanne", "system.md"), "Global prompt.");
 
     await expect(loadSystemInstructions({ cwd: root, home })).resolves.toBe("Global prompt.");
     await expect(loadSystemInstructions({

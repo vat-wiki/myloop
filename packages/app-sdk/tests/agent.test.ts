@@ -47,7 +47,7 @@ describe("createAppAgent", () => {
 });
 
 async function makeTemporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "mycoder-app-sdk-agent-"));
+  const directory = await mkdtemp(join(tmpdir(), "myanne-app-sdk-agent-"));
   temporaryDirectories.push(directory);
   return directory;
 }

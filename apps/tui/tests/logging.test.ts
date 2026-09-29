@@ -14,7 +14,7 @@ describe("TUI logger", () => {
     })));
   });
 
-  it("appends serialized events under .agents/mycoder/logs", async () => {
+  it("appends serialized events under .agents/myanne/logs", async () => {
     const cwd = await makeTemporaryDirectory();
     const logger = await createTuiLogger({
       cwd,
@@ -70,7 +70,7 @@ describe("TUI logger", () => {
   });
 
   async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "mycoder-logging-"));
+    const directory = await mkdtemp(join(tmpdir(), "myanne-logging-"));
     temporaryDirectories.push(directory);
     return directory;
   }

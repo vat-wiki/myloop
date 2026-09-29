@@ -1,7 +1,7 @@
 # 快速开始
 
 ```ts
-import { SingleAgent, Anthropic } from "mycoder";
+import { SingleAgent, Anthropic } from "myanne";
 
 const modelClient = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,

@@ -58,7 +58,7 @@ describe("app instructions", () => {
 });
 
 async function makeTemporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "mycoder-app-sdk-instructions-"));
+  const directory = await mkdtemp(join(tmpdir(), "myanne-app-sdk-instructions-"));
   temporaryDirectories.push(directory);
   return directory;
 }
