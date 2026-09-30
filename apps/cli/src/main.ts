@@ -4,7 +4,7 @@ import { sep } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import type { SingleAgent } from "myloop/agent";
-import { createAppAgent } from "@myloop/app-sdk";
+import { createAppAgent, loadAppSkills } from "@myloop/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
 import { composeCliSystem, loadAgentsInstructions, loadSystemPrompt } from "./prompt.js";
 import { printAgentPrompts, runTask, errorText } from "./run.js";
@@ -43,12 +43,15 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
   }
 
   try {
-    const [systemPrompt, agentsInstructions] = await Promise.all([
+    const [systemPrompt, agentsInstructions, skills] = await Promise.all([
       loadSystemPrompt({
         path: options.systemPrompt,
         enabled: options.systemPromptEnabled,
       }),
       options.systemPromptEnabled ? loadAgentsInstructions() : Promise.resolve(""),
+      options.systemPromptEnabled
+        ? loadAppSkills({ cwd: process.cwd(), home: process.env.HOME })
+        : Promise.resolve([]),
     ]);
     const { agent } = await createAppAgent({
       name: "cli-agent",
@@ -60,7 +63,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       compactionThreshold: options.compactionThreshold,
       thinking: options.thinking,
       allowLocalFiles: options.allowLocalFiles,
-      system: composeCliSystem({ systemPrompt, agentsInstructions }),
+      system: composeCliSystem({ systemPrompt, agentsInstructions, skills }),
       logger: options.log,
       sessionId: options.sessionId ?? createCliSessionId(),
       cwd: process.cwd(),

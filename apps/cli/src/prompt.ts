@@ -1,7 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { composeSystem, loadAgentsInstructions, readInstructions } from "@myloop/app-sdk";
+import {
+  composeSystem,
+  loadAgentsInstructions,
+  readInstructions,
+  type LoadedSkill,
+} from "@myloop/app-sdk";
 
 export const cliBasePrompt = "你是终端Agent。用command工具完成用户任务，用中文简洁回答。";
 
@@ -67,14 +72,17 @@ function isNotFoundError(error: unknown): boolean {
 export function composeCliSystem({
   systemPrompt = "",
   agentsInstructions = "",
+  skills = [],
 }: {
   systemPrompt?: string;
   agentsInstructions?: string;
+  skills?: ReadonlyArray<LoadedSkill>;
 } = {}): string {
   return composeSystem({
     basePrompt: cliBasePrompt,
     instructions: systemPrompt,
     agentsInstructions,
+    skills,
   });
 }
 

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadSystemPrompt } from "../src/prompt.js";
+import { composeCliSystem, loadSystemPrompt } from "../src/prompt.js";
 
 const temporaryDirectories: Array<string> = [];
 
@@ -17,6 +17,23 @@ async function makeTemporaryDirectory(): Promise<string> {
 }
 
 describe("CLI system prompt", () => {
+  it("renders skill metadata as an on-demand catalog", () => {
+    const system = composeCliSystem({
+      systemPrompt: "Be precise.",
+      skills: [{
+        name: "project-skill",
+        description: "Project skill",
+        instructions: "Project instructions",
+        path: "/tmp/project-skill/SKILL.md",
+      }],
+    });
+
+    expect(system).toContain("Be precise.");
+    expect(system).toContain("## Skills");
+    expect(system).toContain("- `project-skill`: Project skill");
+    expect(system).not.toContain("Project instructions");
+  });
+
   it("loads the nearest project system prompt before global and built-in prompts", async () => {
     const home = await makeTemporaryDirectory();
     const root = await makeTemporaryDirectory();
