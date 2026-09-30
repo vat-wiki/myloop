@@ -3,7 +3,7 @@
 SDK 使用自己的内部 block 格式。用户输入支持 `text`、`image`、`document` 和 `video`。
 
 ```ts
-import { documentBlock, imageBlock } from "myanne";
+import { documentBlock, imageBlock } from "myloop";
 
 await agent.run([
   { type: "text", text: "请分析这张图和这份 PDF" },

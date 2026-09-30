@@ -17,7 +17,7 @@ describe("TUI config loading", () => {
   it("reads the global .agents config", async () => {
     const home = await makeTemporaryDirectory();
     await mkdir(join(home, ".agents"), { recursive: true });
-    await writeFile(join(home, ".agents", "myanne.json"), JSON.stringify({
+    await writeFile(join(home, ".agents", "myloop.json"), JSON.stringify({
       protocol: "openai-chat",
       model: "gpt-home",
       apiKey: "direct-key",
@@ -31,19 +31,19 @@ describe("TUI config loading", () => {
       model: "gpt-home",
       apiKey: "direct-key",
     });
-    expect(sources.global).toBe(join(home, ".agents", "myanne.json"));
+    expect(sources.global).toBe(join(home, ".agents", "myloop.json"));
   });
 
   it("validates a configured session id", async () => {
     const home = await makeTemporaryDirectory();
     await mkdir(join(home, ".agents"), { recursive: true });
-    await writeFile(join(home, ".agents", "myanne.json"), JSON.stringify({ sessionId: "work-1" }));
+    await writeFile(join(home, ".agents", "myloop.json"), JSON.stringify({ sessionId: "work-1" }));
 
     await expect(loadTuiConfig({ env: {}, cwd: home, home })).resolves.toMatchObject({
       config: { sessionId: "work-1" },
     });
 
-    await writeFile(join(home, ".agents", "myanne.json"), JSON.stringify({ sessionId: "../escape" }));
+    await writeFile(join(home, ".agents", "myloop.json"), JSON.stringify({ sessionId: "../escape" }));
     await expect(loadTuiConfig({ env: {}, cwd: home, home })).rejects.toThrow("config sessionId");
   });
 
@@ -52,12 +52,12 @@ describe("TUI config loading", () => {
     const project = await makeTemporaryDirectory();
     await mkdir(join(home, ".agents"), { recursive: true });
     await mkdir(join(project, ".agents"), { recursive: true });
-    await writeFile(join(home, ".agents", "myanne.json"), JSON.stringify({
+    await writeFile(join(home, ".agents", "myloop.json"), JSON.stringify({
       protocol: "anthropic",
       model: "claude-home",
       allowLocalFiles: false,
     }));
-    await writeFile(join(project, ".agents", "myanne.json"), JSON.stringify({
+    await writeFile(join(project, ".agents", "myloop.json"), JSON.stringify({
       protocol: "openai-chat",
       model: "gpt-project",
       allowLocalFiles: true,
@@ -74,8 +74,8 @@ describe("TUI config loading", () => {
       model: "gpt-project",
       allowLocalFiles: true,
     });
-    expect(sources.global).toBe(join(home, ".agents", "myanne.json"));
-    expect(sources.project).toBe(join(project, ".agents", "myanne.json"));
+    expect(sources.global).toBe(join(home, ".agents", "myloop.json"));
+    expect(sources.project).toBe(join(project, ".agents", "myloop.json"));
   });
 
   it("searches ancestor directories for the nearest project config", async () => {
@@ -84,7 +84,7 @@ describe("TUI config loading", () => {
     const nested = join(root, "packages", "app");
     await mkdir(nested, { recursive: true });
     await mkdir(join(root, ".agents"), { recursive: true });
-    await writeFile(join(root, ".agents", "myanne.json"), JSON.stringify({
+    await writeFile(join(root, ".agents", "myloop.json"), JSON.stringify({
       model: "gpt-root",
     }));
 
@@ -96,14 +96,14 @@ describe("TUI config loading", () => {
 
     expect(config).toEqual({ model: "gpt-root" });
     expect(sources).toEqual({
-      project: join(root, ".agents", "myanne.json"),
+      project: join(root, ".agents", "myloop.json"),
     });
   });
 
   it("rejects invalid or unknown config values", async () => {
     const invalid = await makeTemporaryDirectory();
     await mkdir(join(invalid, ".agents"), { recursive: true });
-    await writeFile(join(invalid, ".agents", "myanne.json"), JSON.stringify({ protocol: "ollama" }));
+    await writeFile(join(invalid, ".agents", "myloop.json"), JSON.stringify({ protocol: "ollama" }));
 
     await expect(loadTuiConfig({ env: {}, cwd: invalid, home: invalid }))
       .rejects
@@ -111,32 +111,22 @@ describe("TUI config loading", () => {
 
     const unknown = await makeTemporaryDirectory();
     await mkdir(join(unknown, ".agents"), { recursive: true });
-    await writeFile(join(unknown, ".agents", "myanne.json"), JSON.stringify({ provider: "anthropic" }));
+    await writeFile(join(unknown, ".agents", "myloop.json"), JSON.stringify({ provider: "anthropic" }));
 
     await expect(loadTuiConfig({ env: {}, cwd: unknown, home: unknown }))
       .rejects
       .toThrow("config has unknown field: provider");
 
-    const invalidWindow = await makeTemporaryDirectory();
-    await mkdir(join(invalidWindow, ".agents"), { recursive: true });
-    await writeFile(join(invalidWindow, ".agents", "myanne.json"), JSON.stringify({
-      contextWindowTokens: 0,
-    }));
-
-    await expect(loadTuiConfig({ env: {}, cwd: invalidWindow, home: invalidWindow }))
-      .rejects
-      .toThrow("config contextWindowTokens must be a positive integer");
   });
 
   it("ignores deprecated config fields", async () => {
     const home = await makeTemporaryDirectory();
     await mkdir(join(home, ".agents"), { recursive: true });
-    await writeFile(join(home, ".agents", "myanne.json"), JSON.stringify({
+    await writeFile(join(home, ".agents", "myloop.json"), JSON.stringify({
       protocol: "anthropic",
       model: "claude-home",
       maxTokens: 1_000,
       timeoutMs: 60_000,
-      retryAttempts: 2,
     }));
 
     const { config } = await loadTuiConfig({ env: {}, cwd: home, home });
@@ -149,7 +139,7 @@ describe("TUI config loading", () => {
 
   it("validates system prompt configuration", async () => {
     const home = await makeTemporaryDirectory();
-    const configPath = join(home, ".agents", "myanne.json");
+    const configPath = join(home, ".agents", "myloop.json");
     await mkdir(join(home, ".agents"), { recursive: true });
 
     await writeFile(configPath, JSON.stringify({ systemPrompt: "./custom.md" }));
@@ -169,7 +159,7 @@ describe("TUI config loading", () => {
   });
 
   async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "myanne-config-"));
+    const directory = await mkdtemp(join(tmpdir(), "myloop-config-"));
     temporaryDirectories.push(directory);
     return directory;
   }

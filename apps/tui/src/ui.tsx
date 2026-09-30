@@ -1,9 +1,9 @@
 import { TextAttributes, TextareaRenderable } from "@opentui/core";
 import { For, Show, createSignal, onCleanup } from "solid-js";
 import type { JSX } from "solid-js";
-import type { SingleAgent } from "myanne/agent";
-import type { AgentContentBlock, AgentMessage } from "myanne/messages";
-import type { ContextPressure, RuntimeSessionStore } from "myanne/runtime";
+import type { SingleAgent } from "myloop/agent";
+import type { AgentContentBlock, AgentMessage } from "myloop/messages";
+import type { ContextPressure, RuntimeSessionStore } from "myloop/runtime";
 import type { TuiLogger } from "./logging.js";
 import { readClipboardText } from "./clipboard.js";
 import {
@@ -261,7 +261,7 @@ export function TuiApp({
       } catch (error) {
         stopTimer();
         const failedInput = input ?? "";
-        await logger?.log("run_error", {
+        await logger?.diagnostic("error", "agent run failed", {
           input: failedInput,
           error,
           durationMs: Date.now() - startedAt,
@@ -427,7 +427,7 @@ export function TuiApp({
     <box flexDirection="column" width="100%" height="100%">
       <box flexShrink={0} flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1} height={1}>
         <text fg="#22d3ee" attributes={TextAttributes.BOLD}>
-          {`◆ myanne · ${protocol} · ${model} · ${sessionId()}`}
+          {`◆ myloop · ${protocol} · ${model} · ${sessionId()}`}
         </text>
         <text fg="#64748b">{statusText()}</text>
       </box>
@@ -564,7 +564,7 @@ function WelcomeView(): JSX.Element {
         "Shift+Enter    New line",
         "Ctrl+V         Paste",
         "Esc            Interrupt agent",
-        "Ctrl+C         Exit myanne",
+        "Ctrl+C         Exit myloop",
         "Ctrl+U         Clear input",
         "Tab            Complete command",
       ].join("\n")}</text>

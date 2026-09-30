@@ -1,7 +1,7 @@
 node_modules/
 dist/
 config.json
-.agents/myanne.json
-**/.agents/myanne.json
-**/.agents/myanne/logs/
-**/.agents/myanne/sessions/
+.agents/myloop.json
+**/.agents/myloop.json
+**/.agents/myloop/logs/
+**/.agents/myloop/sessions/

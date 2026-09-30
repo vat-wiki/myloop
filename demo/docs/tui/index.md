@@ -1,4 +1,4 @@
-# myanne TUI
+# myloop TUI
 
 一个极简终端 Agent 界面。只展示进度和结果，不渲染过程。
 
@@ -65,13 +65,13 @@
 
 - `Esc` 随时打断当前任务，与看不看过程无关。
 - `Ctrl+C` 退出，`/exit` 也可以。
-- 出错要追溯时，完整日志写入 `.agents/myanne/logs/*.jsonl`；不要把 `.agents` 提交到公共仓库。
+- 出错要追溯时，完整日志写入 `.agents/myloop/logs/*.jsonl`；不要把 `.agents` 提交到公共仓库。
 
 ## 配置文件
 
 TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更新版本，并启用 Node FFI。
 
-`myanne-tui` 会自动读取 JSON 配置文件。全局配置是 `~/.agents/myanne.json`；同时从当前目录向上查找项目配置 `.agents/myanne.json`。配置合并很简单：project 字段直接覆盖全局同名字段。最终优先级是：CLI 参数 > project 配置 > 全局配置 > 环境变量和内置默认值。
+`myloop-tui` 会自动读取 JSON 配置文件。全局配置是 `~/.agents/myloop.json`；同时从当前目录向上查找项目配置 `.agents/myloop.json`。配置合并很简单：project 字段直接覆盖全局同名字段。最终优先级是：CLI 参数 > project 配置 > 全局配置 > 环境变量和内置默认值。
 
 ```json
 {

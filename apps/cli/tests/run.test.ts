@@ -4,6 +4,7 @@ import {
   formatEventDivider,
   formatToolOutput,
   formatTimestamp,
+  printAgentPrompts,
   runTask,
 } from "../src/run.js";
 import type { RunTaskOptions } from "../src/run.js";
@@ -25,6 +26,53 @@ function createFakeOutput(): { stream: NodeJS.WriteStream; text: string } {
 }
 
 describe("CLI task runner", () => {
+  it("prints system and tool declarations without writing stdout", async () => {
+    const statusMessages: Array<string> = [];
+    const traceText: Array<string> = [];
+    const output = createFakeOutput();
+
+    await runTask({
+      agent: {
+        system: "terminal system",
+        tools: [{ name: "command", description: "Run command", parameters: { type: "object" } }],
+        on: () => () => {},
+        abort() {},
+        reset() {},
+        run: async () => ({ answer: "done", response: { stopReason: "end" } }),
+      },
+      input: "run tests",
+      saveSession: async () => {},
+      output: output.stream,
+      status: (message) => statusMessages.push(message),
+      trace: (text) => traceText.push(text),
+      printPrompts: true,
+    });
+
+    expect(statusMessages.join("\n")).toMatch(/──── system ─+/);
+    expect(statusMessages.join("\n")).toMatch(/──── tools ─+/);
+    expect(traceText.join("")).toContain("terminal system");
+    expect(traceText.join("")).toContain("\"name\": \"command\"");
+    expect(output.text).toBe("done\n");
+  });
+
+  it("formats agent prompts", () => {
+    const statusMessages: Array<string> = [];
+    const traceText: Array<string> = [];
+
+    printAgentPrompts({
+      agent: {
+        system: "terminal system",
+        tools: [{ name: "command", description: "Run command", parameters: { type: "object" } }],
+      },
+      status: (message) => statusMessages.push(message),
+      trace: (text) => traceText.push(text),
+    });
+
+    expect(statusMessages).toHaveLength(2);
+    expect(traceText.join("")).toContain("terminal system");
+    expect(traceText.join("")).toContain("\"description\": \"Run command\"");
+  });
+
   it("prints status to stderr and the answer to stdout", async () => {
     const statusMessages: Array<string> = [];
     const output = createFakeOutput();

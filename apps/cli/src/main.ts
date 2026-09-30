@@ -3,17 +3,20 @@ import { homedir } from "node:os";
 import { sep } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
-import type { SingleAgent } from "myanne/agent";
-import { createAppAgent } from "@myanne/app-sdk";
+import type { SingleAgent } from "myloop/agent";
+import { createAppAgent } from "@myloop/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
 import { composeCliSystem, loadAgentsInstructions, loadSystemPrompt } from "./prompt.js";
-import { runTask, errorText } from "./run.js";
+import { printAgentPrompts, runTask, errorText } from "./run.js";
 import { createCliSessionId } from "./session.js";
 
 export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)): Promise<number> {
   let options: CliOptions;
   try {
-    const { config } = await loadAgentConfig({ env: process.env });
+    const configPath = argv.includes("--config")
+      ? argv[argv.indexOf("--config") + 1]
+      : undefined;
+    const { config } = await loadAgentConfig({ env: process.env, configPath });
     options = parseCliArgs(argv, process.env, config);
   } catch (error) {
     process.stderr.write(`${errorText(error)}\n\n${formatCliHelp()}\n`);
@@ -41,7 +44,10 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
 
   try {
     const [systemPrompt, agentsInstructions] = await Promise.all([
-      options.systemPromptEnabled ? loadSystemPrompt(options.systemPrompt) : Promise.resolve(""),
+      loadSystemPrompt({
+        path: options.systemPrompt,
+        enabled: options.systemPromptEnabled,
+      }),
       options.systemPromptEnabled ? loadAgentsInstructions() : Promise.resolve(""),
     ]);
     const { agent } = await createAppAgent({
@@ -51,10 +57,8 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       apiKey: options.apiKey,
       env: process.env,
       baseURL: options.baseURL,
-      contextWindowTokens: options.contextWindowTokens,
-      maxTokens: options.maxTokens,
+      compactionThreshold: options.compactionThreshold,
       thinking: options.thinking,
-      thinkingBudgetTokens: options.thinkingBudgetTokens,
       allowLocalFiles: options.allowLocalFiles,
       system: composeCliSystem({ systemPrompt, agentsInstructions }),
       logger: options.log,
@@ -72,17 +76,21 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
         status: (message) => process.stderr.write(`${message}\n`),
         trace: (text) => process.stderr.write(text),
         color: isColorEnabled(process.env, process.stderr),
+        printPrompts: options.printPrompts,
       });
     }
 
-    return await runInteractive({ agent });
+    return await runInteractive({ agent, printPrompts: options.printPrompts });
   } catch (error) {
     process.stderr.write(`${errorText(error)}\n`);
     return 1;
   }
 }
 
-async function runInteractive({ agent }: { agent: SingleAgent }): Promise<number> {
+async function runInteractive({
+  agent,
+  printPrompts,
+}: { agent: SingleAgent; printPrompts: boolean }): Promise<number> {
   const readline = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -100,6 +108,16 @@ async function runInteractive({ agent }: { agent: SingleAgent }): Promise<number
     readline.close();
   });
 
+  if (printPrompts) {
+    printAgentPrompts({
+      agent,
+      status: (message) => process.stderr.write(`${message}\n`),
+      trace: (text) => process.stderr.write(text),
+      color: isColorEnabled(process.env, process.stderr),
+      width: process.stderr.columns,
+    });
+  }
+
   const submit = async (rawInput: string): Promise<void> => {
     const input = rawInput.trim();
     if (!input) return;
@@ -108,18 +126,8 @@ async function runInteractive({ agent }: { agent: SingleAgent }): Promise<number
       readline.close();
       return;
     }
-    if (input === "/reset") {
-      if (agent.running) {
-        process.stderr.write("agent is running\n");
-        return;
-      }
-      agent.reset();
-      await agent.saveSession();
-      process.stderr.write("session reset\n");
-      return;
-    }
     if (input === "/help") {
-      process.stderr.write("Commands: /reset, /exit · Ctrl+C interrupts, second Ctrl+C exits\n");
+      process.stderr.write("Commands: /exit · Ctrl+C interrupts, second Ctrl+C exits\n");
       return;
     }
     if (agent.running) {

@@ -27,7 +27,7 @@ describe("app session store", () => {
     await store.save("work-2", snapshot);
     await store.save("work-1", snapshot);
 
-    expect(store.sessionPath("work-1")).toBe(join(cwd, ".agents", "myanne", "sessions", "work-1.json"));
+    expect(store.sessionPath("work-1")).toBe(join(cwd, ".agents", "myloop", "sessions", "work-1.json"));
     await expect(store.load("work-1")).resolves.toEqual(snapshot);
     await expect(store.list()).resolves.toEqual(["work-1", "work-2"]);
     expect(isValidAppSessionId("work.1_2")).toBe(true);
@@ -64,7 +64,7 @@ describe("app session store", () => {
 });
 
 async function makeTemporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "myanne-app-sdk-session-"));
+  const directory = await mkdtemp(join(tmpdir(), "myloop-app-sdk-session-"));
   temporaryDirectories.push(directory);
   return directory;
 }

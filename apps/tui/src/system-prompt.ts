@@ -1,13 +1,13 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { composeSystem, loadAgentsInstructions, readInstructions, type LoadedSkill } from "@myanne/app-sdk";
+import { composeSystem, loadAgentsInstructions, readInstructions, type LoadedSkill } from "@myloop/app-sdk";
 import { loadSkills } from "./skills.js";
 
 export const tuiBasePrompt = "你是终端Agent。用command工具完成用户任务，用中文简洁回答。";
 
 const coreInstructionsPath = fileURLToPath(new URL("../system.md", import.meta.url));
-const systemPromptPath = join(".agents", "myanne", "system.md");
+const systemPromptPath = join(".agents", "myloop", "system.md");
 
 export type LoadSystemInstructionsOptions = {
   cwd?: string;
@@ -97,7 +97,7 @@ async function findProjectSystemPromptPath(startDirectory: string): Promise<stri
 
 async function exists(path: string): Promise<boolean> {
   try {
-    await readFile(path, "utf8");
+    await stat(path);
     return true;
   } catch (error) {
     return isMissingFileError(error) ? false : true;

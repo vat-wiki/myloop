@@ -1,6 +1,6 @@
-# @myanne/app-sdk
+# @myloop/app-sdk
 
-Application-layer building blocks for myanne agents.
+Application-layer building blocks for myloop agents.
 
 - `createAppAgent` assembles model client, input adapter, command host, logger, and sessions.
 - `FileSessionStore` persists and lists snapshots.

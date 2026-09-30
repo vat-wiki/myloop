@@ -1,6 +1,7 @@
-import { createUserInputAdapter, SingleAgent } from "myanne/agent";
-import { ShellCommandHost } from "myanne/command/shell";
-import type { AgentExtension, CommandHost, RuntimeSessionStore } from "myanne/runtime";
+import { createUserInputAdapter, SingleAgent } from "myloop/agent";
+import { ShellCommandHost } from "myloop/command/shell";
+import type { AgentExtension, CommandHost, HeartbeatOptions, RuntimeSessionStore } from "myloop/runtime";
+import type { AgentLogLevel } from "myloop/runtime";
 import { createAppLogger } from "./logging.js";
 import { createAppModelClient, type AppProtocol } from "./model.js";
 import { FileSessionStore } from "./session.js";
@@ -14,6 +15,8 @@ export type CreateAppAgentOptions = {
   baseURL?: string;
   contextWindowTokens?: number;
   maxTokens?: number;
+  compactionThreshold?: number;
+  heartbeat?: HeartbeatOptions;
   thinking?: boolean;
   thinkingBudgetTokens?: number;
   allowLocalFiles?: boolean;
@@ -21,9 +24,11 @@ export type CreateAppAgentOptions = {
   sessionId?: string;
   sessionStore?: RuntimeSessionStore;
   cwd?: string;
-  logger?: boolean;
+  logger?: boolean | AgentLogLevel;
   extensions?: ReadonlyArray<AgentExtension>;
-  commandHost?: CommandHost;
+  /** 传 `null` 表示显式不挂 shell（例如只暴露自有工具的 Web 端）。 */
+  commandHost?: CommandHost | null;
+  commandHosts?: ReadonlyArray<CommandHost>;
 };
 
 export type AppAgent = {
@@ -37,8 +42,18 @@ export async function createAppAgent(options: CreateAppAgentOptions): Promise<Ap
   const apiKey = options.apiKey ?? env[
     options.protocol === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"
   ];
-  const logger = options.logger === true
-    ? await createAppLogger({ cwd: options.cwd, protocol: options.protocol, model: options.model })
+  const logLevel = options.logger === true
+    ? "events"
+    : options.logger === undefined || options.logger === false || options.logger === "off"
+      ? undefined
+      : options.logger;
+  const logger = logLevel
+    ? await createAppLogger({
+        cwd: options.cwd,
+        level: logLevel,
+        protocol: options.protocol,
+        model: options.model,
+      })
     : undefined;
   const input = createUserInputAdapter({ allowLocalFiles: options.allowLocalFiles ?? false });
   const sessionStore = options.sessionStore ?? new FileSessionStore({ cwd: options.cwd });
@@ -57,8 +72,11 @@ export async function createAppAgent(options: CreateAppAgentOptions): Promise<Ap
     }),
     input,
     system: options.system,
+    compactionThreshold: options.compactionThreshold,
+    heartbeat: options.heartbeat,
     extensions: [...(logger ? [logger.extension] : []), ...(options.extensions ?? [])],
-    commandHost: options.commandHost ?? new ShellCommandHost(),
+    commandHost: options.commandHost === null ? undefined : options.commandHost ?? new ShellCommandHost(),
+    commandHosts: options.commandHosts,
     sessionId: options.sessionId,
     sessionStore,
   });

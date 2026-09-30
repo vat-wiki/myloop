@@ -1,4 +1,4 @@
-# myanne TUI
+# myloop TUI
 
 一个极简终端 Agent 界面。只展示进度和结果，不渲染过程。
 
@@ -56,11 +56,11 @@
 
 ### 出错要追溯怎么办
 
-完整日志写入 `.agents/myanne/logs/*.jsonl`。日志包含任务文本、命令和输出；不要把 `.agents` 提交到公共仓库。
+默认开启 `events`。`--log=off|events|errors` 控制模型和工具审计日志；`--log` 等价于 `--log=events`。日志写入 `.agents/myloop/logs/*.jsonl`，运行时异常写入同目录的 `diagnostics-*.jsonl`。日志包含任务文本、命令和输出；不要把 `.agents` 提交到公共仓库。
 
 ### 想继续上次的会话怎么办
 
-TUI 默认每次启动都开启新会话，并在第一轮对话后写入 `.agents/myanne/sessions/`。只有通过 `--session-id work-1` 或配置里的 `sessionId` 指定时，启动才会恢复该会话。运行中输入 `/sessions` 可以列出并切换已有会话。`/reset` 会清空当前会话文件。
+TUI 默认每次启动都开启新会话，并在第一轮对话后写入 `.agents/myloop/sessions/`。只有通过 `--session-id work-1` 或配置里的 `sessionId` 指定时，启动才会恢复该会话。运行中输入 `/sessions` 可以列出并切换已有会话。`/reset` 会清空当前会话文件。
 
 会话文件包含任务和回复；不要把 `.agents` 提交到公共仓库。
 
@@ -81,8 +81,8 @@ TUI 启动时会读取从文件系统根到当前目录的 `AGENTS.md`，并注�
 内置提示词是默认 Profile，不是固定约定。TUI 按下面的优先级加载可替换提示词：
 
 1. `--system-prompt <file>`
-2. 当前目录及祖先目录的 `.agents/myanne/system.md`
-3. `~/.agents/myanne/system.md`
+2. 当前目录及祖先目录的 `.agents/myloop/system.md`
+3. `~/.agents/myloop/system.md`
 4. 内置 `system.md`
 
 配置文件里的 `"systemPrompt": "./team.md"` 等价于指定自定义文件；`"systemPrompt": false` 关闭可替换提示词。`--no-system-prompt` 优先于文件和配置。`AGENTS.md` 与 Skills 的加载方式不受该开关影响。

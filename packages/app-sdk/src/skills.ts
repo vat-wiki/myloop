@@ -1,6 +1,6 @@
 import { access, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { parseSkillFile } from "myanne/skills";
+import { parseSkillFile } from "myloop/skills";
 import type { LoadedSkill } from "./instructions.js";
 
 const SKILL_FILENAME = "SKILL.md";

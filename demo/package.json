@@ -1,8 +1,8 @@
 {
-  "name": "myanne-docs",
+  "name": "myloop-docs",
   "version": "1.0.0",
   "private": true,
-  "description": "myanne 文档网站",
+  "description": "myloop 文档网站",
   "type": "module",
   "scripts": {
     "dev": "vitepress dev docs",

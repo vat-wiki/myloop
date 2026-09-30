@@ -1,5 +1,5 @@
 {
-  "name": "@myanne/pty",
+  "name": "@myloop/pty",
   "version": "0.1.0",
   "description": "One-shot PTY command runner with a JSON protocol",
   "private": true,
@@ -8,7 +8,7 @@
     "node": ">=26.4.0"
   },
   "bin": {
-    "myanne-pty": "./dist/main.js"
+    "myloop-pty": "./dist/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/main.js",

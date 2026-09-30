@@ -3,6 +3,6 @@ export type {
   ConfigProtocol as TuiProtocol,
   ConfigSources as TuiConfigSources,
   LoadAgentConfigOptions as LoadTuiConfigOptions,
-} from "myanne/config";
+} from "myloop/config";
 
-export { loadAgentConfig as loadTuiConfig } from "myanne/config";
+export { loadAgentConfig as loadTuiConfig } from "myloop/config";

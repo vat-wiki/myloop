@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --experimental-ffi
-import type { SingleAgent } from "myanne/agent";
-import type { RuntimeSessionStore } from "myanne/runtime";
-import { createAppAgent } from "@myanne/app-sdk";
+import type { SingleAgent } from "myloop/agent";
+import type { RuntimeSessionStore } from "myloop/runtime";
+import { createAppAgent } from "@myloop/app-sdk";
 import { runTuiApp } from "./app.js";
 import type { TuiLogger } from "./logging.js";
 import {
@@ -21,7 +21,10 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
   let logger: TuiLogger | undefined;
   let sessionStore: RuntimeSessionStore | undefined;
   try {
-    const { config } = await loadTuiConfig({ env: process.env });
+    const configPath = argv.includes("--config")
+      ? argv[argv.indexOf("--config") + 1]
+      : undefined;
+    const { config } = await loadTuiConfig({ env: process.env, configPath });
     options = parseTuiArgs(argv, process.env, config);
 
     if (options.help) {
@@ -45,10 +48,10 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       apiKey: options.apiKey,
       env: process.env,
       baseURL: options.baseURL,
-      contextWindowTokens: options.contextWindowTokens,
+      compactionThreshold: options.compactionThreshold,
       allowLocalFiles: options.allowLocalFiles,
       system: composeTuiSystem({ instructions, agentsInstructions, skills }),
-      logger: true,
+      logger: options.log,
       sessionId: options.sessionId ?? createTuiSessionId(),
       cwd: process.cwd(),
     }));

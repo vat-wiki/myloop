@@ -12,21 +12,20 @@ describe("TUI CLI", () => {
   });
 
   it("parses explicit options", () => {
-    expect(parseTuiArgs([
-      "--protocol", "openai-responses",
-      "--model", "gpt-test",
-      "--base-url", "https://example.test/v1",
-      "--context-window-tokens", "131072",
-    ])).toEqual({
+    expect(parseTuiArgs([], {}, {
+      protocol: "openai-responses",
+      model: "gpt-test",
+      baseURL: "https://example.test/v1",
+    })).toEqual({
       protocol: "openai-responses",
       model: "gpt-test",
       baseURL: "https://example.test/v1",
       apiKey: undefined,
       allowLocalFiles: false,
-      contextWindowTokens: 131_072,
       sessionId: undefined,
       systemPrompt: undefined,
       systemPromptEnabled: true,
+      log: "events",
       help: false,
     });
   });
@@ -37,7 +36,6 @@ describe("TUI CLI", () => {
       model: "gpt-config",
       apiKey: "config-key",
       allowLocalFiles: true,
-      contextWindowTokens: undefined,
       sessionId: "from-config",
     })).toEqual({
       protocol: "openai-responses",
@@ -45,60 +43,66 @@ describe("TUI CLI", () => {
       baseURL: undefined,
       apiKey: "config-key",
       allowLocalFiles: true,
-      contextWindowTokens: undefined,
       sessionId: "from-config",
       systemPrompt: undefined,
       systemPromptEnabled: true,
+      log: "events",
       help: false,
     });
   });
 
   it("parses system prompt controls and config overrides", () => {
-    expect(parseTuiArgs(["--model", "gpt-test", "--system-prompt", "custom.md"]))
+    expect(parseTuiArgs(["--system-prompt", "custom.md"], {}, { model: "gpt-test" }))
       .toMatchObject({
         systemPrompt: "custom.md",
         systemPromptEnabled: true,
       });
-    expect(parseTuiArgs(["--model", "gpt-test", "--no-system-prompt"]))
+    expect(parseTuiArgs(["--no-system-prompt"], {}, { model: "gpt-test" }))
       .toMatchObject({
         systemPrompt: undefined,
         systemPromptEnabled: false,
       });
-    expect(parseTuiArgs(["--model", "gpt-test"], {}, { systemPrompt: "config.md" }))
+    expect(parseTuiArgs([], {}, { model: "gpt-test", systemPrompt: "config.md" }))
       .toMatchObject({
         systemPrompt: "config.md",
         systemPromptEnabled: true,
       });
-    expect(parseTuiArgs(["--model", "gpt-test"], {}, { systemPrompt: false }))
+    expect(parseTuiArgs([], {}, { model: "gpt-test", systemPrompt: false }))
       .toMatchObject({
         systemPrompt: undefined,
         systemPromptEnabled: false,
       });
-    expect(parseTuiArgs(["--model", "gpt-test", "--system-prompt", "custom.md"], {}, { systemPrompt: false }))
+    expect(parseTuiArgs(["--system-prompt", "custom.md"], {}, { model: "gpt-test", systemPrompt: false }))
       .toMatchObject({
         systemPrompt: "custom.md",
         systemPromptEnabled: true,
       });
-    expect(parseTuiArgs(["--model", "gpt-test", "--no-system-prompt"], {}, { systemPrompt: "config.md" }))
+    expect(parseTuiArgs(["--no-system-prompt"], {}, { model: "gpt-test", systemPrompt: "config.md" }))
       .toMatchObject({
         systemPrompt: undefined,
         systemPromptEnabled: false,
       });
-    expect(() => parseTuiArgs(["--model", "gpt-test", "--system-prompt"]))
+    expect(() => parseTuiArgs(["--system-prompt"], {}, { model: "gpt-test" }))
       .toThrow("system prompt path is required");
   });
 
   it("parses and validates a session id", () => {
-    expect(parseTuiArgs(["--session-id", "work-1", "--model", "gpt-test"]).sessionId).toBe("work-1");
+    expect(parseTuiArgs(["--session-id", "work-1"], {}, { model: "gpt-test" }).sessionId).toBe("work-1");
     expect(parseTuiArgs([], { OPENAI_MODEL: "gpt-test" }, { sessionId: "from-config" }).sessionId).toBe("from-config");
-    expect(() => parseTuiArgs(["--session-id", "../escape", "--model", "gpt-test"])).toThrow("session id");
+    expect(() => parseTuiArgs(["--session-id", "../escape"], {}, { model: "gpt-test" })).toThrow("session id");
+  });
+
+  it("parses logging levels and disables logs by default", () => {
+    expect(parseTuiArgs([], {}, { model: "gpt-test" }).log).toBe("events");
+    expect(parseTuiArgs(["--log=errors"], {}, { model: "gpt-test" }).log).toBe("errors");
+    expect(parseTuiArgs(["--log", "events"], {}, { model: "gpt-test" }).log).toBe("events");
+    expect(() => parseTuiArgs(["--log=full"], {}, { model: "gpt-test" }))
+      .toThrow("log level must be one of");
   });
 
   it("rejects invalid options and renders help", () => {
-    expect(() => parseTuiArgs(["--protocol", "ollama"])).toThrow("unknown protocol: ollama");
     expect(() => parseTuiArgs([], {})).toThrow("model is required");
     expect(() => parseTuiArgs(["--max-tokens", "128"])).toThrow("unknown argument: --max-tokens");
-    expect(() => parseTuiArgs(["--context-window-tokens", "0"])).toThrow("context window tokens must be a positive integer");
-    expect(formatTuiHelp()).toContain("myanne TUI");
+    expect(formatTuiHelp()).toContain("myloop TUI");
   });
 });

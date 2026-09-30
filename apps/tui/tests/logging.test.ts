@@ -14,7 +14,7 @@ describe("TUI logger", () => {
     })));
   });
 
-  it("appends serialized events under .agents/myanne/logs", async () => {
+  it("appends serialized events under .agents/myloop/logs", async () => {
     const cwd = await makeTemporaryDirectory();
     const logger = await createTuiLogger({
       cwd,
@@ -64,13 +64,33 @@ describe("TUI logger", () => {
       ok: true,
     });
     expect(events.find((event) => event.type === "tool_error")).toMatchObject({
+      level: "error",
       error: { message: "failed" },
       ok: false,
     });
   });
 
+  it("writes runtime diagnostics to a separate JSONL file", async () => {
+    const cwd = await makeTemporaryDirectory();
+    const logger = await createTuiLogger({
+      cwd,
+      protocol: "openai-chat",
+      model: "test-model",
+    });
+
+    await logger.diagnostic("error", "agent run failed", { input: "hello" });
+
+    expect(await readFile(logger.path, "utf8").then((content) => content.split("\n").length)).toBe(2);
+    const events = await readEvents(logger.diagnosticsPath);
+    expect(events).toEqual([expect.objectContaining({
+      level: "error",
+      message: "agent run failed",
+      data: { input: "hello" },
+    })]);
+  });
+
   async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "myanne-logging-"));
+    const directory = await mkdtemp(join(tmpdir(), "myloop-logging-"));
     temporaryDirectories.push(directory);
     return directory;
   }

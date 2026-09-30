@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { RuntimeSessionSnapshot, RuntimeSessionStore } from "myanne/runtime";
+import type { RuntimeSessionSnapshot, RuntimeSessionStore } from "myloop/runtime";
 
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 
@@ -30,7 +30,7 @@ export class FileSessionStore implements RuntimeSessionStore {
 
   constructor({
     cwd = process.cwd(),
-    directory = join(".agents", "myanne", "sessions"),
+    directory = join(".agents", "myloop", "sessions"),
   }: FileSessionStoreOptions = {}) {
     this.directory = resolve(cwd, directory);
   }

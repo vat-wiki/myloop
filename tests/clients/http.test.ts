@@ -15,6 +15,29 @@ function response(
 }
 
 describe("postJson retry transport", () => {
+  it("retries transient HTTP errors with slower defaults", async () => {
+    vi.useFakeTimers();
+    const transport = vi.fn().mockResolvedValue(
+      response({ error: "upstream unavailable" }, { status: 502 }),
+    );
+
+    try {
+      const result = expect(postJson({
+        transport,
+        url: "https://example.test/model",
+        headers: {},
+        body: { prompt: "hello" },
+        errorName: "AnthropicHttpError",
+      })).rejects.toThrow("AnthropicHttpError failed with status 502");
+
+      await vi.advanceTimersByTimeAsync(200_000);
+      await result;
+      expect(transport).toHaveBeenCalledTimes(6);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not retry non-retryable HTTP errors", async () => {
     const transport = vi.fn().mockResolvedValue(response({ message: "bad request" }, { status: 400 }));
 

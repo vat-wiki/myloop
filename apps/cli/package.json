@@ -1,5 +1,5 @@
 {
-  "name": "@myanne/cli",
+  "name": "@myloop/cli",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -7,7 +7,7 @@
   },
   "type": "module",
   "bin": {
-    "myanne": "./dist/main.js"
+    "myloop": "./dist/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/main.js",
@@ -16,8 +16,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@myanne/app-sdk": "file:../../packages/app-sdk",
-    "myanne": "file:../../"
+    "@myloop/app-sdk": "file:../../packages/app-sdk",
+    "myloop": "file:../../"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

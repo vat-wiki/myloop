@@ -24,7 +24,6 @@ import {
   type ContextPressure,
   estimateMessagesTokens,
   measureContextPressure,
-  compactFallback,
 } from "./context.js";
 import {
   createUserInputAdapter,
@@ -39,6 +38,7 @@ import {
   type RuntimeSessionSnapshot,
   type RuntimeSessionStore,
 } from "./session.js";
+import { Heartbeat, type HeartbeatOptions } from "./heartbeat.js";
 
 export type ToolHandler = (
   input: Record<string, unknown>,
@@ -49,14 +49,20 @@ export type ToolHandlers = Record<string, ToolHandler>;
 
 const MAX_OUTPUT_CONTINUATIONS = 8;
 
+const COMPACTION_SUMMARY_REQUEST =
+  "请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。";
+
 export type AgentRuntimeOptions = {
   modelClient: ModelClient;
   system?: string;
   extensions?: ReadonlyArray<AgentExtension>;
   commandHost?: CommandHost;
+  commandHosts?: ReadonlyArray<CommandHost>;
   input?: UserInputResolver | UserInputAdapterOptions;
   sessionId?: string;
   sessionStore?: RuntimeSessionStore;
+  compactionThreshold?: number;
+  heartbeat?: HeartbeatOptions;
 };
 
 class AgentRuntime {
@@ -69,7 +75,9 @@ class AgentRuntime {
   readonly input: UserInputResolver;
   #sessionId?: string;
   readonly sessionStore?: RuntimeSessionStore;
-  #commandHost?: CommandHost;
+  readonly #commandHosts: ReadonlyArray<CommandHost>;
+  readonly #compactionThreshold: number;
+  readonly #heartbeat: Heartbeat | null;
   messages: Array<AgentMessage> = [];
 
   constructor({
@@ -77,21 +85,45 @@ class AgentRuntime {
     system = "你是终端Agent,用command工具执行命令来完成任务,用中文简洁回答。",
     extensions = [],
     commandHost,
+    commandHosts,
     input,
     sessionId,
     sessionStore,
+    compactionThreshold = 0.8,
+    heartbeat,
   }: AgentRuntimeOptions) {
     if (!modelClient) {
       throw new Error("modelClient is required");
+    }
+
+    const hosts = [...(commandHost ? [commandHost] : []), ...(commandHosts ?? [])];
+    const toolNames = new Set<string>();
+    const hostIds = new Set<string>();
+    for (const host of hosts) {
+      if (toolNames.has(host.toolName)) {
+        throw new Error(`duplicate command host tool name: ${host.toolName}`);
+      }
+      if (hostIds.has(host.id)) {
+        throw new Error(`duplicate command host id: ${host.id}`);
+      }
+      toolNames.add(host.toolName);
+      hostIds.add(host.id);
     }
 
     this.modelClient = modelClient;
     this.system = system;
     this.extensions = extensions;
     this.input = isUserInputAdapter(input) ? input : createUserInputAdapter(input);
-    this.#commandHost = commandHost;
+    this.#commandHosts = hosts;
+    this.#compactionThreshold = compactionThreshold;
     this.#sessionId = sessionId;
     this.sessionStore = sessionStore;
+    this.#heartbeat = heartbeat
+      ? new Heartbeat(heartbeat, {
+          isBusy: () => this.#running,
+          onTick: (event) => this.#events.emit("heartbeat", event),
+        })
+      : null;
   }
 
   get sessionId(): string | undefined {
@@ -115,17 +147,21 @@ class AgentRuntime {
   }
 
   get commandHost(): CommandHost | undefined {
-    return this.#commandHost;
+    return this.#commandHosts[0];
+  }
+
+  get commandHosts(): ReadonlyArray<CommandHost> {
+    return this.#commandHosts;
   }
 
   get tools(): Array<ToolDefinition> {
-    return this.#commandHost ? [createCommandHostTool(this.#commandHost)] : [];
+    return this.#commandHosts.map(createCommandHostTool);
   }
 
   get toolHandlers(): ToolHandlers {
-    return this.#commandHost
-      ? { [this.#commandHost.toolName]: createCommandHostHandler(this.#commandHost) }
-      : {};
+    return Object.fromEntries(
+      this.#commandHosts.map((host) => [host.toolName, createCommandHostHandler(host)]),
+    );
   }
 
   abort(reason?: unknown): void {
@@ -184,6 +220,7 @@ class AgentRuntime {
     const controller = new AbortController();
     this.#controller = controller;
     this.#running = true;
+    this.#heartbeat?.resume();
 
     try {
       const runtimeInput = await this.input.resolve(input);
@@ -198,6 +235,7 @@ class AgentRuntime {
       this.#events.emit("error", { error });
       throw error;
     } finally {
+      this.#heartbeat?.pause();
       this.#controller = null;
       this.#running = false;
     }
@@ -217,7 +255,7 @@ class AgentRuntime {
       if (pressure.needsCompaction) {
         await this.#compactMessages({
           reason: "automatic",
-          pressure,
+          signal,
         });
       }
 
@@ -314,6 +352,7 @@ class AgentRuntime {
       usedTokens,
       limitTokens: this.modelClient.context?.contextWindowTokens,
       reservedOutputTokens: this.modelClient.context?.reservedOutputTokens,
+      compactionThreshold: this.#compactionThreshold,
     });
   }
 
@@ -330,34 +369,54 @@ class AgentRuntime {
 
     return await this.#compactMessages({
       reason: "manual",
-      pressure,
     });
   }
 
   #compactMessages = async (input: {
     reason: "automatic" | "manual";
-    pressure: ContextPressure;
+    signal?: AbortSignal;
   }): Promise<CompactionResult> => {
     const before = this.messages;
-    const result = compactFallback({
+    const result = await this.#compactWithSummary({
       messages: before,
-      pressure: input.pressure,
-      estimateRequestTokens: (messages) => this.modelClient.context?.estimateRequestTokens?.({
-        system: this.system,
-        tools: [...this.tools],
-        messages: [...messages],
-      }) ?? estimateMessagesTokens(messages),
+      signal: input.signal,
+    });
+    this.#events.emit("context_compacted", { before, after: result.messages });
+    this.messages = result.messages;
+    return result;
+  };
+
+  #compactWithSummary = async (input: {
+    messages: ReadonlyArray<AgentMessage>;
+    signal?: AbortSignal;
+  }): Promise<CompactionResult> => {
+    const summaryRequestMessage: AgentMessage = {
+      role: "user",
+      content: [{ type: "text", text: COMPACTION_SUMMARY_REQUEST }],
+    };
+
+    const response = await this.modelClient.complete({
+      system: this.system,
+      messages: [...input.messages, summaryRequestMessage],
+      tools: [...this.tools],
+      signal: input.signal,
     });
 
-    if (result.messages !== before) {
-      this.#events.emit("context_compacted", {
-        before,
-        after: result.messages,
-      });
-      this.messages = result.messages;
+    const summaryText = response.content
+      .filter((block): block is Extract<AgentContentBlock, { type: "text" }> => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
+    if (!summaryText.trim()) {
+      throw new Error("empty compaction summary");
     }
 
-    return result;
+    return {
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: `[Context summary] ${summaryText}` }],
+      }],
+      droppedMessageCount: input.messages.length,
+    };
   };
 
   #applyBeforeModelCallExtensions = async (
@@ -408,6 +467,14 @@ class AgentRuntime {
       throw new Error("cannot reset while agent is running");
     }
     this.messages = [];
+  }
+
+  startHeartbeat(): void {
+    this.#heartbeat?.start();
+  }
+
+  stopHeartbeat(): void {
+    this.#heartbeat?.stop();
   }
 
   #assertIdle(action: string): void {

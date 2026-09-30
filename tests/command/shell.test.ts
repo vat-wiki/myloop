@@ -31,8 +31,8 @@ describe("runShell", () => {
   });
 
   it("honors a shell override", async () => {
-    const previousShell = process.env.MYANNE_SHELL;
-    process.env.MYANNE_SHELL = "/bin/sh";
+    const previousShell = process.env.MYLOOP_SHELL;
+    process.env.MYLOOP_SHELL = "/bin/sh";
 
     try {
       const output = await runShell({
@@ -42,23 +42,23 @@ describe("runShell", () => {
 
       expect(output).toContain("sh");
     } finally {
-      if (previousShell === undefined) delete process.env.MYANNE_SHELL;
-      else process.env.MYANNE_SHELL = previousShell;
+      if (previousShell === undefined) delete process.env.MYLOOP_SHELL;
+      else process.env.MYLOOP_SHELL = previousShell;
     }
   });
 
   it("rejects an unusable shell override instead of spawning it", async () => {
-    const previousShell = process.env.MYANNE_SHELL;
-    process.env.MYANNE_SHELL = "/path/to/missing-shell";
+    const previousShell = process.env.MYLOOP_SHELL;
+    process.env.MYLOOP_SHELL = "/path/to/missing-shell";
 
     try {
       await expect(runShell({
         command: "true",
         timeout: 1_000,
-      })).rejects.toThrow("MYANNE_SHELL is not executable: /path/to/missing-shell");
+      })).rejects.toThrow("MYLOOP_SHELL is not executable: /path/to/missing-shell");
     } finally {
-      if (previousShell === undefined) delete process.env.MYANNE_SHELL;
-      else process.env.MYANNE_SHELL = previousShell;
+      if (previousShell === undefined) delete process.env.MYLOOP_SHELL;
+      else process.env.MYLOOP_SHELL = previousShell;
     }
   });
 
@@ -74,7 +74,7 @@ describe("runShell", () => {
   });
 
   it("kills background children with the process group", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "myanne-shell-"));
+    const directory = await mkdtemp(join(tmpdir(), "myloop-shell-"));
     const pidFile = join(directory, "child.pid");
 
     try {
@@ -137,7 +137,7 @@ describe("runPty", () => {
   });
 
   it("kills background children with the process group", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "myanne-pty-"));
+    const directory = await mkdtemp(join(tmpdir(), "myloop-pty-"));
     const pidFile = join(directory, "child.pid");
 
     try {

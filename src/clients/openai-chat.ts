@@ -93,7 +93,6 @@ class OpenAIChat {
     this.context = {
       contextWindowTokens: contextWindowTokens ?? 128_000,
       reservedOutputTokens: this.maxTokens ?? 4_096,
-      safetyTokens: 20_000,
       estimateRequestTokens(request: ModelRequest): number {
         return Math.ceil(JSON.stringify(request).length / 4);
       },

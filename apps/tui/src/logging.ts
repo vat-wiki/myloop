@@ -1,9 +1,16 @@
-import type { AgentLogEvent, AgentLogger } from "myanne/runtime";
+import type {
+  AgentDiagnosticEvent,
+  AgentLogEvent,
+  AgentLogger,
+  AgentLogLevel,
+} from "myloop/runtime";
 
 export type TuiLogEvent = AgentLogEvent;
+export type TuiDiagnosticEvent = AgentDiagnosticEvent;
 export type TuiLogger = AgentLogger;
 
 export {
   createAppLogger as createTuiLogger,
   type AppLoggerOptions as TuiLoggerOptions,
-} from "@myanne/app-sdk";
+  type AgentLogLevel as TuiLogLevel,
+} from "@myloop/app-sdk";

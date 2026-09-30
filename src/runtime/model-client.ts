@@ -38,7 +38,6 @@ export function sumTokenCounts(...counts: Array<number | undefined>): number | u
 export type ModelContextInfo = {
   contextWindowTokens?: number;
   reservedOutputTokens?: number;
-  safetyTokens?: number;
   estimateRequestTokens?(request: ModelRequest): number;
 };
 

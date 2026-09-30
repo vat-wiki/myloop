@@ -30,7 +30,7 @@ export type ShellCommandInput = {
 export class ShellCommandHost implements CommandHost<ShellCommandInput, string> {
   readonly id = "terminal";
   readonly toolName = "command";
-  readonly description = `一次性运行命令并等待退出；超时终止进程树并返回输出。默认使用非 TTY 子进程；仅当命令必须检测 TTY、渲染 TUI 或读取 /dev/tty 时设置 tty=true，该模式使用 myanne-pty。长驻服务优先使用项目已有的进程管理方式，临时可恢复会话使用 tmux`;
+  readonly description = `一次性运行命令并等待退出；超时终止进程树并返回输出。默认使用非 TTY 子进程；仅当命令必须检测 TTY、渲染 TUI 或读取 /dev/tty 时设置 tty=true，该模式使用 myloop-pty。长驻服务优先使用项目已有的进程管理方式，临时可恢复会话使用 tmux`;
 
   readonly inputSchema: JsonSchemaObject = {
     type: "object",

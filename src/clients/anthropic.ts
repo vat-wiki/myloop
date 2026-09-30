@@ -156,7 +156,6 @@ class Anthropic {
     this.context = {
       contextWindowTokens: contextWindowTokens ?? 200_000,
       reservedOutputTokens: maxTokens,
-      safetyTokens: 20_000,
       estimateRequestTokens(request: ModelRequest): number {
         return Math.ceil(JSON.stringify(request).length / 4);
       },

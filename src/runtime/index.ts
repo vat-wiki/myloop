@@ -5,6 +5,14 @@ export {
   type ToolHandler,
   type ToolHandlers,
 } from "./agent.js";
+export {
+  Heartbeat,
+  type HeartbeatEvent,
+  type HeartbeatHooks,
+  type HeartbeatOptions,
+  type HeartbeatTimer,
+  type HeartbeatTimerFactory,
+} from "./heartbeat.js";
 export * from "./messages.js";
 export type {
   RuntimeSessionSnapshot,
@@ -31,8 +39,11 @@ export type { AgentExtension, AgentTool } from "./extension.js";
 export {
   AgentLogger,
   createAgentLogger,
+  isAgentLogLevel,
   type AgentLogEvent,
+  type AgentDiagnosticEvent,
   type AgentLoggerOptions,
+  type AgentLogLevel,
 } from "./logging.js";
 export type {
   ContextPressure,

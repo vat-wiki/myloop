@@ -92,6 +92,14 @@ export class SingleAgent implements Agent {
     return this.runtime.compact();
   }
 
+  startHeartbeat(): void {
+    this.runtime.startHeartbeat();
+  }
+
+  stopHeartbeat(): void {
+    this.runtime.stopHeartbeat();
+  }
+
   async run(input: UserInput): Promise<AgentResult> {
     const response = await this.runtime.run(input);
     const answer = responseText(response.content);

@@ -1,6 +1,6 @@
-# myanne
+# myloop
 
-`myanne` 是一个 TypeScript SDK，不是一个命令行工具。它负责维护 Agent 会话、调用 ModelClient、执行工具循环，并把运行过程以事件形式暴露给调用方。
+`myloop` 是一个 TypeScript SDK，不是一个命令行工具。它负责维护 Agent 会话、调用 ModelClient、执行工具循环，并把运行过程以事件形式暴露给调用方。
 
 当前内置了一个 terminal `CommandHost`，对外暴露 `command` 工具；另提供 `Anthropic`、`OpenAIChat`、`OpenAIResponses` 三个 ModelClient。模型连接、模型名和请求参数由 ModelClient 管理；Runtime 只使用自己的内部消息格式。
 
@@ -17,7 +17,7 @@ Skill 是上层的领域说明和操作手册。它不新增执行通道，也�
 Runtime 也提供 `AgentExtension` 扩展点。扩展可以检查或改写 ModelClient 请求、检查或改写 ModelClient 响应、以及包装 command host 工具调用，但不能新增工具或替换 host 执行语义。
 
 ```ts
-import { composeSystem, type Skill } from "myanne/skills";
+import { composeSystem, type Skill } from "myloop/skills";
 
 const repoSkill: Skill = {
   name: "repo",
@@ -44,7 +44,7 @@ const agent = new SingleAgent({
 `SKILL.md` 也可以直接解析为 `Skill`。`parseSkill` 接受文件路径或 Markdown 内容；以 `---` 开头的输入会按内容解析，否则按路径读取。
 
 ```ts
-import { parseSkill } from "myanne/skills";
+import { parseSkill } from "myloop/skills";
 
 const skill = await parseSkill(".agents/skills/repo/SKILL.md");
 const inlineSkill = await parseSkill([
@@ -66,7 +66,7 @@ frontmatter 必须位于文件开头，支持基本的 `key: value` 和引号值
 `AgentExtension` 是 Runtime 的外部扩展点，用来承载横切能力，例如请求审计、日志脱敏、token 用量统计或 command 调用包装。
 
 ```ts
-import type { AgentExtension } from "myanne";
+import type { AgentExtension } from "myloop";
 
 const auditExtension: AgentExtension = {
   name: "audit",
@@ -110,7 +110,7 @@ wrapToolCall: outer extension wraps inner extension
 Runtime 提供可复用的 JSONL 日志扩展：
 
 ```ts
-import { createAgentLogger } from "myanne";
+import { createAgentLogger } from "myloop";
 
 const logger = await createAgentLogger({
   directory: ".logs",
@@ -153,7 +153,7 @@ Runtime 会在每次 ModelClient 调用前触发 `context_pressure`；发生压�
 当一个任务需要更大的注意力范围时，可以把多个 `Agent` 组合成一个 `CompositeAgent`。`CompositeAgent` 本身仍然是一个 Agent；它对内由 coordinator 动态决定是否委派任务、委派给谁、以及何时结束。
 
 ```ts
-import { CompositeAgent } from "myanne/agent";
+import { CompositeAgent } from "myloop/agent";
 
 const compositeAgent = new CompositeAgent({
   name: "repo-agent",
@@ -250,7 +250,7 @@ npm test
 
 TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更新版本，并启用 Node FFI。
 
-`myanne-tui` 会自动读取 JSON 配置文件。全局配置是 `~/.agents/myanne.json`；非 production 环境还会从当前目录向上查找 `.agents/myanne.json`。配置合并很简单：project 字段直接覆盖全局同名字段。最终优先级是：CLI 参数 > project 配置 > 全局配置 > 环境变量和内置默认值。
+`myloop-tui` 会自动读取 JSON 配置文件。全局配置是 `~/.agents/myloop.json`；非 production 环境还会从当前目录向上查找 `.agents/myloop.json`。配置合并很简单：project 字段直接覆盖全局同名字段。最终优先级是：CLI 参数 > project 配置 > 全局配置 > 环境变量和内置默认值。
 
 ```json
 {
@@ -268,14 +268,14 @@ TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更�
 
 `contextWindowTokens` 覆盖协议默认上下文窗口；未配置时 `openai-chat` 和 `openai-responses` 默认 `128000`，`anthropic` 默认 `200000`。也可以用 `--context-window-tokens <tokens>` 临时覆盖。
 
-未指定 `sessionId` 时，TUI 每次启动都会开启新会话；配置 `sessionId` 或传入 `--session-id <id>` 时才在启动时恢复。会话文件保存在 `.agents/myanne/sessions/`，运行中输入 `/sessions` 可列出并切换，`/reset` 会清空当前会话。
+未指定 `sessionId` 时，TUI 每次启动都会开启新会话；配置 `sessionId` 或传入 `--session-id <id>` 时才在启动时恢复。会话文件保存在 `.agents/myloop/sessions/`，运行中输入 `/sessions` 可列出并切换，`/reset` 会清空当前会话。
 
 会话文件包含任务和回复；不要把 `.agents` 提交到公共仓库。
 
 ## 快速开始
 
 ```ts
-import { SingleAgent, Anthropic } from "myanne";
+import { SingleAgent, Anthropic } from "myloop";
 
 const modelClient = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -334,7 +334,7 @@ restoredAgent.restore(snapshot);
 如果需要持久化，可以实现 `RuntimeSessionStore` 后注入 Runtime：
 
 ```ts
-import type { RuntimeSessionStore } from "myanne";
+import type { RuntimeSessionStore } from "myloop";
 
 const sessionStore: RuntimeSessionStore = {
   async save(sessionId, snapshot) {
@@ -376,7 +376,7 @@ type UserInput =
 SDK 使用自己的内部 block 格式。用户输入支持 `text`、`image`、`document` 和 `video`。
 
 ```ts
-import { documentBlock, imageBlock } from "myanne";
+import { documentBlock, imageBlock } from "myloop";
 
 await agent.run([
   { type: "text", text: "请分析这张图和这份 PDF" },
@@ -462,7 +462,7 @@ const agent = new SingleAgent({
 
 ### HTTP Transport, Timeout 和 Retry
 
-所有内置 ModelClient 默认通过同一个 HTTP transport 请求模型 API。默认实现使用原生 `fetch`，默认超时 60 秒，默认重试 2 次（也就是首次请求加最多一次重试）。
+所有内置 ModelClient 默认通过同一个 HTTP transport 请求模型 API。默认实现使用原生 `fetch`，默认超时 60 秒，默认最多请求 6 次；未提供 `Retry-After` 时按 5 秒起步、60 秒封顶的指数间隔重试。
 
 只会重试临时性错误：
 
@@ -481,8 +481,8 @@ const modelClient = new Anthropic({
   timeoutMs: 60_000,
   retry: {
     attempts: 3,
-    initialDelayMs: 500,
-    maxDelayMs: 8_000,
+    initialDelayMs: 5_000,
+    maxDelayMs: 60_000,
   },
 });
 ```
@@ -491,7 +491,7 @@ const modelClient = new Anthropic({
 
 ```ts
 import axios from "axios";
-import type { HttpTransport } from "myanne";
+import type { HttpTransport } from "myloop";
 
 const axiosTransport: HttpTransport = async (request) => {
   const response = await axios.request({
@@ -602,7 +602,7 @@ try {
 ModelClient 接收 Agent 的内部消息格式，并返回规范化响应。
 
 ```ts
-import type { ModelClient } from "myanne";
+import type { ModelClient } from "myloop";
 
 const modelClient: ModelClient = {
   async complete({ system, messages, tools, signal }) {
@@ -715,7 +715,7 @@ src/
 │   ├── index.ts          # CommandHost 协议
 │   └── shell/
 │       ├── index.ts      # terminal host
-│       ├── pty.ts        # PTY transport 和 myanne-pty JSON 协议
+│       ├── pty.ts        # PTY transport 和 myloop-pty JSON 协议
 │       └── runner.ts     # 非 TTY shell runner
 ├── clients/
     ├── anthropic.ts    # Anthropic 协议转换层

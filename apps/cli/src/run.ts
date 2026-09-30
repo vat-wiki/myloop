@@ -1,5 +1,9 @@
+import type { ToolDefinition } from "myloop/runtime";
+
 export type RunTaskOptions = {
   agent: {
+    system: string;
+    tools: ReadonlyArray<ToolDefinition>;
     on(event: "tool_start", listener: (event: { id?: string; name: string; input: Record<string, unknown> }) => void): () => void;
     on(event: "tool_end", listener: (event: { id?: string; name?: string; output: unknown }) => void): () => void;
     on(event: "thinking_delta", listener: (event: { delta: string }) => void): () => void;
@@ -19,6 +23,7 @@ export type RunTaskOptions = {
   trace: (text: string) => void;
   color?: boolean;
   width?: number;
+  printPrompts?: boolean;
 };
 
 const COLORS = {
@@ -41,6 +46,7 @@ export async function runTask({
   trace,
   color: colorEnabled = false,
   width = 72,
+  printPrompts = false,
 }: RunTaskOptions): Promise<number> {
   const startedAt = Date.now();
   let stream: "thinking" | "text" | undefined;
@@ -60,6 +66,8 @@ export async function runTask({
   ): void => {
     status(paintIfEnabled(formatEventDivider(name, options, width), color));
   };
+
+  if (printPrompts) printAgentPrompts({ agent, status, trace, color: colorEnabled, width });
 
   const appendStream = (next: "thinking" | "text", delta: string): void => {
     if (!delta) return;
@@ -156,6 +164,29 @@ export function formatDuration(milliseconds: number): string {
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${(seconds - minutes * 60).toFixed(0)}s`;
+}
+
+export function printAgentPrompts({
+  agent,
+  status,
+  trace,
+  color = false,
+  width = 72,
+}: {
+  agent: Pick<RunTaskOptions["agent"], "system" | "tools">;
+  status: (message: string) => void;
+  trace: (text: string) => void;
+  color?: boolean;
+  width?: number;
+}): void {
+  const paintIfEnabled = (text: string, colorCode: string): string => {
+    return color ? paint(text, colorCode) : text;
+  };
+
+  status(paintIfEnabled(formatEventDivider("system", {}, width), COLORS.dim));
+  trace(`${agent.system}\n`);
+  status(paintIfEnabled(formatEventDivider("tools", {}, width), COLORS.dim));
+  trace(`${JSON.stringify(agent.tools, null, 2)}\n`);
 }
 
 export type EventDividerOptions = {

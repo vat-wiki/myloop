@@ -3,4 +3,4 @@ export {
   FileSessionStore,
   isValidAppSessionId as isValidCliSessionId,
   type FileSessionStoreOptions,
-} from "@myanne/app-sdk";
+} from "@myloop/app-sdk";

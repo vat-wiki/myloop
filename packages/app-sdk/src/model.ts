@@ -1,7 +1,7 @@
-import { Anthropic } from "myanne/clients/anthropic";
-import { OpenAIChat } from "myanne/clients/openai-chat";
-import { OpenAIResponses } from "myanne/clients/openai-responses";
-import type { ArtifactStore, ModelClient } from "myanne/runtime";
+import { Anthropic } from "myloop/clients/anthropic";
+import { OpenAIChat } from "myloop/clients/openai-chat";
+import { OpenAIResponses } from "myloop/clients/openai-responses";
+import type { ArtifactStore, ModelClient } from "myloop/runtime";
 
 export type AppProtocol = "anthropic" | "openai-chat" | "openai-responses";
 

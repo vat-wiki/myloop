@@ -24,7 +24,7 @@ describe("TUI file session store", () => {
       messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
     });
 
-    expect(store.sessionPath("work-1")).toBe(join(cwd, ".agents", "myanne", "sessions", "work-1.json"));
+    expect(store.sessionPath("work-1")).toBe(join(cwd, ".agents", "myloop", "sessions", "work-1.json"));
     await expect(store.load("work-1")).resolves.toEqual({
       version: 1,
       messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
@@ -71,7 +71,7 @@ describe("TUI file session store", () => {
   });
 
   async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "myanne-tui-session-"));
+    const directory = await mkdtemp(join(tmpdir(), "myloop-tui-session-"));
     temporaryDirectories.push(directory);
     return directory;
   }

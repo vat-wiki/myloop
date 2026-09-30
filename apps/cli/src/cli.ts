@@ -1,4 +1,5 @@
-import type { AgentConfig } from "myanne/config";
+import type { AgentConfig } from "myloop/config";
+import { isAgentLogLevel, type AgentLogLevel, type ToolDefinition } from "myloop/runtime";
 
 export type CliProtocol = "anthropic" | "openai-chat" | "openai-responses";
 
@@ -10,20 +11,20 @@ export type CliOptions = {
   apiKey?: string;
   baseURL?: string;
   allowLocalFiles: boolean;
-  maxTokens?: number;
-  contextWindowTokens?: number;
+  compactionThreshold?: number;
   sessionId?: string;
   systemPrompt?: string;
   systemPromptEnabled: boolean;
+  printPrompts: boolean;
   thinking: boolean;
-  thinkingBudgetTokens?: number;
-  log: boolean;
+  log: AgentLogLevel;
+  configPath?: string;
   prompt?: string;
   help: boolean;
 };
 
-export type { AgentConfig, ConfigProtocol, ConfigSources } from "myanne/config";
-export { loadAgentConfig } from "myanne/config";
+export type { AgentConfig, ConfigProtocol, ConfigSources } from "myloop/config";
+export { loadAgentConfig } from "myloop/config";
 
 const PROTOCOLS: ReadonlyArray<CliProtocol> = [
   "anthropic",
@@ -46,18 +47,12 @@ export function parseCliArgs(
   env: NodeJS.ProcessEnv = process.env,
   config: CliConfig = {},
 ): CliOptions {
-  let protocol: CliProtocol | undefined;
-  let model: string | undefined;
-  let baseURL: string | undefined;
-  let contextWindowTokens: number | undefined;
   let sessionId: string | undefined;
   let systemPrompt: string | undefined;
   let systemPromptEnabled = true;
-  let thinking = false;
-  let thinkingBudgetTokens: number | undefined;
-  let allowLocalFiles: boolean | undefined;
-  let maxTokens: number | undefined;
-  let log = false;
+  let printPrompts = true;
+  let log: AgentLogLevel = "events";
+  let configPath: string | undefined;
   const positionalArguments: Array<string> = [];
   let help = false;
 
@@ -71,28 +66,6 @@ export function parseCliArgs(
       break;
     } else if (argument === "--help" || argument === "-h") {
       help = true;
-    } else if (argument === "--protocol") {
-      const next = value();
-      if (!isCliProtocol(next)) {
-        throw new Error(`unknown protocol: ${next ?? "(missing)"}`);
-      }
-      protocol = next;
-    } else if (argument === "--model") {
-      model = value();
-    } else if (argument === "--base-url") {
-      baseURL = value();
-    } else if (argument === "--max-tokens") {
-      const next = Number(value());
-      if (!Number.isInteger(next) || next <= 0) {
-        throw new Error("max tokens must be a positive integer");
-      }
-      maxTokens = next;
-    } else if (argument === "--context-window-tokens") {
-      const next = Number(value());
-      if (!Number.isInteger(next) || next <= 0) {
-        throw new Error("context window tokens must be a positive integer");
-      }
-      contextWindowTokens = next;
     } else if (argument === "--session-id") {
       const next = value();
       if (!isValidCliSessionId(next)) {
@@ -107,18 +80,28 @@ export function parseCliArgs(
       systemPrompt = next;
     } else if (argument === "--no-system-prompt") {
       systemPromptEnabled = false;
-    } else if (argument === "--thinking") {
-      thinking = true;
-    } else if (argument === "--thinking-budget-tokens") {
-      const next = Number(value());
-      if (!Number.isInteger(next) || next < 1024) {
-        throw new Error("thinking budget tokens must be an integer of at least 1024");
-      }
-      thinkingBudgetTokens = next;
-    } else if (argument === "--allow-local-files") {
-      allowLocalFiles = true;
+    } else if (argument === "--no-print-prompts") {
+      printPrompts = false;
     } else if (argument === "--log") {
-      log = true;
+      const next = argv[index + 1];
+      if (isAgentLogLevel(next)) {
+        log = next;
+        index += 1;
+      } else {
+        log = "events";
+      }
+    } else if (argument.startsWith("--log=")) {
+      const level = argument.slice("--log=".length);
+      if (!isAgentLogLevel(level)) {
+        throw new Error("log level must be one of: off, events, errors");
+      }
+      log = level;
+    } else if (argument === "--config") {
+      const next = value();
+      if (!next) {
+        throw new Error("config file path is required");
+      }
+      configPath = next;
     } else if (argument.startsWith("-")) {
       throw new Error(`unknown argument: ${argument}`);
     } else {
@@ -126,10 +109,10 @@ export function parseCliArgs(
     }
   }
 
-  const selectedProtocol = protocol ?? config.protocol ?? (
+  const selectedProtocol = config.protocol ?? (
     env.ANTHROPIC_API_KEY ? "anthropic" : "openai-chat"
   );
-  const selectedModel = model ?? config.model ?? (
+  const selectedModel = config.model ?? (
     selectedProtocol === "anthropic" ? env.ANTHROPIC_MODEL : env.OPENAI_MODEL
   );
   if (!selectedModel && !help) {
@@ -140,18 +123,18 @@ export function parseCliArgs(
     protocol: selectedProtocol,
     model: selectedModel ?? "",
     apiKey: config.apiKey,
-    baseURL: baseURL ?? config.baseURL,
-    allowLocalFiles: allowLocalFiles ?? config.allowLocalFiles ?? false,
-    maxTokens,
-    contextWindowTokens: contextWindowTokens ?? config.contextWindowTokens,
+    baseURL: config.baseURL,
+    allowLocalFiles: config.allowLocalFiles ?? false,
+    compactionThreshold: config.compactionThreshold,
     sessionId: sessionId ?? config.sessionId,
     systemPrompt: systemPromptEnabled
       ? systemPrompt ?? (typeof config.systemPrompt === "string" ? config.systemPrompt : undefined)
       : undefined,
     systemPromptEnabled: systemPromptEnabled && (systemPrompt !== undefined || config.systemPrompt !== false),
-    thinking,
-    thinkingBudgetTokens,
+    printPrompts,
+    thinking: config.thinking ?? false,
     log,
+    configPath,
     prompt: positionalArguments.join(" ").trim() || undefined,
     help,
   };
@@ -159,29 +142,22 @@ export function parseCliArgs(
 
 export function formatCliHelp(): string {
   return [
-    "myanne CLI",
+    "myloop CLI",
     "",
     "Usage:",
-    "  myanne [options] <task>     Run one task and print the result",
-    "  myanne [options]            Start an interactive session",
+    "  myloop [options] <task>     Run one task and print the result",
+    "  myloop [options]            Start an interactive session",
     "",
     "Options:",
-    "  --protocol <anthropic|openai-chat|openai-responses>",
-    "  --model <model-id>",
-    "  --base-url <url>",
-    "  --max-tokens <tokens>",
-    "  --context-window-tokens <tokens>",
+    "  --config <file>              Use a specific config file",
     "  --session-id <id>            Resume a session",
     "  --system-prompt <file>       Add a system prompt file",
     "  --no-system-prompt           Disable prompt and AGENTS.md loading",
-    "  --allow-local-files          Allow local file inputs",
-    "  --thinking                   Ask reasoning models to expose thinking when supported",
-    "  --thinking-budget-tokens <n> Anthropic thinking budget (minimum 1024)",
-    "  --log                        Write model/tool logs",
+    "  --no-print-prompts           Hide system prompt and tool declarations",
+    "  --log[=<off|events|errors>]  Write model/tool audit logs (default: events)",
     "  -h, --help",
     "",
     "Commands:",
-    "  /reset Reset the current session",
     "  /exit  Exit the CLI",
   ].join("\n");
 }

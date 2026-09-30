@@ -17,6 +17,7 @@ export type AgentEventMap = {
   tool_end: { id: string; name: string; input: Record<string, unknown>; output: unknown };
   context_pressure: { pressure: ContextPressure };
   context_compacted: { before: Array<AgentMessage>; after: Array<AgentMessage> };
+  heartbeat: { tick: number; at: number; running: boolean };
   end: { response: ModelResponse };
   error: { error: unknown };
 };

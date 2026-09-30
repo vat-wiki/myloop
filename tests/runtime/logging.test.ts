@@ -64,13 +64,51 @@ describe("runtime logger", () => {
       ok: true,
     });
     expect(events.find((event) => event.type === "tool_error")).toMatchObject({
+      level: "error",
       error: { message: "failed" },
       ok: false,
     });
   });
 
+  it("records only error events in errors mode and keeps diagnostics separate", async () => {
+    const cwd = await makeTemporaryDirectory();
+    const logger = await createAgentLogger({
+      cwd,
+      directory: ".logs",
+      level: "errors",
+    });
+    const tool = {
+      name: "bash",
+      definition: { name: "bash", description: "test", parameters: {} },
+      handler: async () => "done",
+    };
+    const handler = logger.extension.wrapToolCall?.(tool);
+    await handler?.({ command: "echo done" }, {});
+
+    const failingTool = { ...tool, handler: async () => { throw new Error("failed"); } };
+    const failingHandler = logger.extension.wrapToolCall?.(failingTool);
+    await expect(failingHandler?.({ command: "exit 1" }, {})).rejects.toThrow("failed");
+    await logger.diagnostic("error", "runtime failed", { reason: "test" });
+
+    const events = await readEvents(logger.path);
+    expect(events.map((event) => event.type)).toEqual(["session_start", "tool_error"]);
+    expect(events[1]).toMatchObject({
+      level: "error",
+      name: "bash",
+      input: { command: "exit 1" },
+      error: { message: "failed" },
+    });
+
+    const diagnostics = await readEvents(logger.diagnosticsPath);
+    expect(diagnostics).toEqual([expect.objectContaining({
+      level: "error",
+      message: "runtime failed",
+      data: { reason: "test" },
+    })]);
+  });
+
   async function makeTemporaryDirectory(): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), "myanne-runtime-logging-"));
+    const directory = await mkdtemp(join(tmpdir(), "myloop-runtime-logging-"));
     temporaryDirectories.push(directory);
     return directory;
   }

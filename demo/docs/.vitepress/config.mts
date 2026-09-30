@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   lang: "zh-CN",
-  title: "myanne",
+  title: "myloop",
   description: "TypeScript Agent Runtime SDK：Agent 会话、ModelClient、工具循环与事件流",
   cleanUrls: true,
   lastUpdated: true,
@@ -50,7 +50,7 @@ export default defineConfig({
       "/tui/": [
         {
           text: "TUI",
-          items: [{ text: "myanne TUI", link: "/tui/" }],
+          items: [{ text: "myloop TUI", link: "/tui/" }],
         },
       ],
     },

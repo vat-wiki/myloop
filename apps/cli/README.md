@@ -1,4 +1,4 @@
-# myanne CLI
+# myloop CLI
 
 一个零 UI 依赖的极简终端 Agent。非交互模式把最终结果写入 `stdout`，运行状态写入 `stderr`；交互模式使用 Node 内置 `readline`。
 
@@ -12,10 +12,14 @@ npm run cli -- --model gpt-test "fix the tests"
 npm run cli -- --model gpt-test
 ```
 
-`--log` 会把模型和工具调用写入 `.agents/myanne/logs/`；默认不写日志。会话文件保存在 `.agents/myanne/sessions/`。
+`--log=off|events|errors` 控制模型和工具审计日志，默认 `events`；`--log` 等价于 `--log=events`。事件文件在 `.agents/myloop/logs/`，运行时异常写入同目录的 `diagnostics-*.jsonl`。会话文件保存在 `.agents/myloop/sessions/`。
 
-终端执行顺序是 Unix `bash > sh`，Windows `pwsh > powershell > ComSpec`；这样优先保证命令兼容性。需要强制指定时设置 `MYANNE_SHELL=/path/to/shell`。
+CLI 默认在启动或一次性任务前打印最终系统提示词和工具声明，`--no-print-prompts` 可关闭。这些内容写入 `stderr`，不会影响最终结果输出。
+
+终端执行顺序是 Unix `bash > sh`，Windows `pwsh > powershell > ComSpec`；这样优先保证命令兼容性。需要强制指定时设置 `MYLOOP_SHELL=/path/to/shell`。
 
 状态和流式内容写入 `stderr`，TTY 下用颜色区分：思考为品红，正文为蓝色，工具为青色，成功为绿色，失败为红色；分割线独占一行，每一轮用 `*` 分割。设置 `NO_COLOR` 或输出不是 TTY 时自动禁用颜色。
 
-CLI 复用 TUI 配置文件。它会读取 `~/.agents/myanne.json`，再从当前目录向上查找 `.agents/myanne.json`；项目配置覆盖全局配置，命令行参数覆盖配置文件。
+CLI 复用 TUI 配置文件。它会读取 `~/.agents/myloop.json`，再从当前目录向上查找 `.agents/myloop.json`；项目配置覆盖全局配置，命令行参数覆盖配置文件。
+
+系统提示词按显式路径、从当前目录向上查找的 `.agents/myloop/system.md`、全局 `~/.agents/myloop/system.md`、内置提示词的顺序加载。

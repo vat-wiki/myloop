@@ -9,9 +9,10 @@ export type AgentConfig = {
   baseURL?: string;
   apiKey?: string;
   allowLocalFiles?: boolean;
-  contextWindowTokens?: number;
+  compactionThreshold?: number;
   sessionId?: string;
   systemPrompt?: string | false;
+  thinking?: boolean;
 };
 
 export type ConfigSources = {
@@ -23,6 +24,7 @@ export type LoadAgentConfigOptions = {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   home?: string;
+  configPath?: string;
 };
 
 const PROTOCOLS: ReadonlyArray<ConfigProtocol> = [
@@ -31,11 +33,11 @@ const PROTOCOLS: ReadonlyArray<ConfigProtocol> = [
   "openai-responses",
 ];
 const AGENTS_DIRECTORY = ".agents";
-const CONFIG_FILENAME = "myanne.json";
+const CONFIG_FILENAME = "myloop.json";
 const DEPRECATED_CONFIG_FIELDS = new Set([
   "maxTokens",
+  "contextWindowTokens",
   "timeoutMs",
-  "retryAttempts",
 ]);
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 
@@ -45,7 +47,19 @@ export async function loadAgentConfig(
   const env = options.env ?? process.env;
   const cwd = options.cwd ?? process.cwd();
   const home = options.home ?? env.HOME;
+  const configPath = options.configPath;
   const sources: ConfigSources = {};
+
+  if (configPath) {
+    const explicitConfig = await readJsonConfig(configPath);
+    if (!explicitConfig) {
+      throw new Error(`config file not found: ${configPath}`);
+    }
+    return {
+      config: explicitConfig,
+      sources: { project: configPath },
+    };
+  }
 
   const globalConfigPath = home ? join(home, AGENTS_DIRECTORY, CONFIG_FILENAME) : undefined;
   const globalConfig = await readJsonConfig(globalConfigPath);
@@ -117,9 +131,10 @@ function validateAgentConfig(value: unknown): AgentConfig {
     "baseURL",
     "apiKey",
     "allowLocalFiles",
-    "contextWindowTokens",
+    "compactionThreshold",
     "sessionId",
     "systemPrompt",
+    "thinking",
   ]);
 
   const config: AgentConfig = {};
@@ -164,12 +179,13 @@ function validateAgentConfig(value: unknown): AgentConfig {
     config.allowLocalFiles = input.allowLocalFiles;
   }
 
-  if (input.contextWindowTokens !== undefined) {
-    if (typeof input.contextWindowTokens !== "number" || !Number.isInteger(input.contextWindowTokens) || input.contextWindowTokens <= 0) {
-      throw new Error("config contextWindowTokens must be a positive integer");
+  if (input.compactionThreshold !== undefined) {
+    if (typeof input.compactionThreshold !== "number" || Number.isNaN(input.compactionThreshold) || input.compactionThreshold <= 0 || input.compactionThreshold > 1) {
+      throw new Error("config compactionThreshold must be a number between 0 and 1");
     }
-    config.contextWindowTokens = input.contextWindowTokens;
+    config.compactionThreshold = input.compactionThreshold;
   }
+
 
   if (input.sessionId !== undefined) {
     assertString(input.sessionId, "config sessionId");
@@ -192,6 +208,13 @@ function validateAgentConfig(value: unknown): AgentConfig {
       }
       config.systemPrompt = input.systemPrompt;
     }
+  }
+
+  if (input.thinking !== undefined) {
+    if (typeof input.thinking !== "boolean") {
+      throw new Error("config thinking must be a boolean");
+    }
+    config.thinking = input.thinking;
   }
 
   return config;

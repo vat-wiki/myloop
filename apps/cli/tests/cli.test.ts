@@ -4,55 +4,53 @@ import { formatInteractivePrompt } from "../src/main.js";
 
 describe("CLI arguments", () => {
   it("parses a one-shot task", () => {
-    const options = parseCliArgs([
-      "--model",
-      "gpt-test",
-      "--max-tokens",
-      "16384",
-      "--allow-local-files",
-      "fix",
-      "the tests",
-    ]);
+    const options = parseCliArgs(["fix", "the tests"], {}, {
+      protocol: "openai-chat",
+      model: "gpt-test",
+      allowLocalFiles: true,
+    });
 
     expect(options).toMatchObject({
       protocol: "openai-chat",
       model: "gpt-test",
-      maxTokens: 16384,
       allowLocalFiles: true,
       prompt: "fix the tests",
       help: false,
+      log: "events",
+      printPrompts: true,
     });
   });
 
-  it("merges config with command-line precedence", () => {
+  it("uses config values", () => {
     const options = parseCliArgs([
-      "--model",
-      "gpt-cli",
-      "--allow-local-files",
       "--system-prompt",
       "./cli.md",
     ], {}, {
       protocol: "openai-chat",
-      model: "gpt-config",
+      model: "gpt-test",
       apiKey: "config-key",
       baseURL: "https://example.com/v1",
-      allowLocalFiles: false,
-      contextWindowTokens: 64_000,
+      allowLocalFiles: true,
       sessionId: "work-1",
       systemPrompt: "./config.md",
     });
 
     expect(options).toMatchObject({
       protocol: "openai-chat",
-      model: "gpt-cli",
+      model: "gpt-test",
       apiKey: "config-key",
       baseURL: "https://example.com/v1",
       allowLocalFiles: true,
-      contextWindowTokens: 64_000,
       sessionId: "work-1",
       systemPrompt: "./cli.md",
       systemPromptEnabled: true,
     });
+  });
+
+  it("can hide prompt declarations", () => {
+    const options = parseCliArgs(["--no-print-prompts", "task"], {}, { model: "gpt-test" });
+
+    expect(options.printPrompts).toBe(false);
   });
 
   it("uses config values when command-line options are omitted", () => {
@@ -82,13 +80,18 @@ describe("CLI arguments", () => {
 
   it("renders help without requiring a model", () => {
     expect(parseCliArgs(["--help"]).help).toBe(true);
-    expect(formatCliHelp()).toContain("myanne CLI");
+    expect(formatCliHelp()).toContain("myloop CLI");
+    expect(formatCliHelp()).toContain("--no-print-prompts");
   });
 
-  it("rejects invalid arguments", () => {
-    expect(() => parseCliArgs(["--protocol", "ollama", "--model", "test"]))
-      .toThrow("unknown protocol: ollama");
-    expect(() => parseCliArgs(["--model", "test", "--unknown"]))
+  it("rejects unknown arguments", () => {
+    expect(parseCliArgs(["--log=errors"], {}, { model: "gpt-test" }).log).toBe("errors");
+    expect(parseCliArgs(["--log", "events", "task"], {}, { model: "gpt-test" }).log).toBe("events");
+    expect(parseCliArgs(["--log", "task"], {}, { model: "gpt-test" }).log).toBe("events");
+    expect(parseCliArgs(["--log", "task"], {}, { model: "gpt-test" }).prompt).toBe("task");
+    expect(() => parseCliArgs(["--log=verbose"], {}, { model: "gpt-test" }))
+      .toThrow("log level must be one of");
+    expect(() => parseCliArgs(["--unknown"]))
       .toThrow("unknown argument: --unknown");
     expect(() => parseCliArgs([], {})).toThrow("model is required");
   });
@@ -96,7 +99,7 @@ describe("CLI arguments", () => {
 
 describe("interactive prompt", () => {
   it("abbreviates the home directory", () => {
-    expect(formatInteractivePrompt("/Users/dev/projects/myanne", "/Users/dev")).toBe("~/projects/myanne ❯ ");
+    expect(formatInteractivePrompt("/Users/dev/projects/myloop", "/Users/dev")).toBe("~/projects/myloop ❯ ");
   });
 
   it("uses the original directory outside home", () => {

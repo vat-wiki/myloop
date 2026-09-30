@@ -9,7 +9,11 @@ export {
   readInstructions,
   type LoadedSkill,
 } from "./instructions.js";
-export { createAppLogger, type AppLoggerOptions } from "./logging.js";
+export {
+  createAppLogger,
+  type AppLoggerOptions,
+  type AgentLogLevel,
+} from "./logging.js";
 export {
   createAppModelClient,
   type AppProtocol,

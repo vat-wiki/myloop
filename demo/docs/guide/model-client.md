@@ -14,7 +14,7 @@ ModelClient 接收 Agent 的内部消息格式，并返回规范化响应。模�
 
 ## HTTP Transport、Timeout 和 Retry
 
-所有内置 ModelClient 默认通过同一个 HTTP transport 请求模型 API。默认实现使用原生 `fetch`，默认超时 60 秒，默认重试 2 次（也就是首次请求加最多一次重试）。
+所有内置 ModelClient 默认通过同一个 HTTP transport 请求模型 API。默认实现使用原生 `fetch`，默认超时 60 秒，默认最多请求 6 次；未提供 `Retry-After` 时按 5 秒起步、60 秒封顶的指数间隔重试。
 
 只会重试临时性错误：
 
@@ -33,8 +33,8 @@ const modelClient = new Anthropic({
   timeoutMs: 60_000,
   retry: {
     attempts: 3,
-    initialDelayMs: 500,
-    maxDelayMs: 8_000,
+    initialDelayMs: 5_000,
+    maxDelayMs: 60_000,
   },
 });
 ```
@@ -43,7 +43,7 @@ const modelClient = new Anthropic({
 
 ```ts
 import axios from "axios";
-import type { HttpTransport } from "myanne";
+import type { HttpTransport } from "myloop";
 
 const axiosTransport: HttpTransport = async (request) => {
   const response = await axios.request({
@@ -81,7 +81,7 @@ const modelClient = new Anthropic({
 ## 自定义 ModelClient
 
 ```ts
-import type { ModelClient } from "myanne";
+import type { ModelClient } from "myloop";
 
 const modelClient: ModelClient = {
   async complete({ system, messages, tools, signal }) {
