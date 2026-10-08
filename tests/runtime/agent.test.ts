@@ -288,6 +288,67 @@ describe("Agent", () => {
     })).toThrow("session snapshot has a tool result without a tool call");
   });
 
+  it("repairs unpaired tool calls when loading sessions from a store", async () => {
+    const corruptedSnapshot = {
+      version: 1 as const,
+      messages: [
+        { role: "user" as const, content: [textBlock("go")] },
+        {
+          role: "assistant" as const,
+          content: [
+            thinkingBlock("plan"),
+            toolCallBlock("call-1", "bash", { command: "pwd" }),
+          ],
+        },
+      ],
+    };
+    const sessionStore: RuntimeSessionStore = {
+      save: async () => {},
+      load: async () => corruptedSnapshot,
+    };
+    const agent = new AgentRuntime({
+      modelClient: createModelClient(async () => response([textBlock("next")])),
+      sessionId: "session-1",
+      sessionStore,
+    });
+
+    await expect(agent.loadSession()).resolves.toBe(true);
+    expect(agent.messages).toHaveLength(2);
+    expect(agent.messages[1]?.content).toEqual([
+      thinkingBlock("plan"),
+      textBlock("[中断的工具调用 bash（call-1）：未记录结果]"),
+    ]);
+    expect(() => agent.snapshot()).not.toThrow();
+  });
+
+  it("repairs orphan tool results when loading sessions", async () => {
+    const corruptedSnapshot = {
+      version: 1 as const,
+      messages: [
+        {
+          role: "tool" as const,
+          content: [toolResultBlock("call-x", "stale", true)],
+        },
+        { role: "user" as const, content: [textBlock("keep")] },
+      ],
+    };
+    const sessionStore: RuntimeSessionStore = {
+      save: async () => {},
+      load: async () => corruptedSnapshot,
+    };
+    const agent = new AgentRuntime({
+      modelClient: createModelClient(async () => response([textBlock("next")])),
+      sessionId: "session-1",
+      sessionStore,
+    });
+
+    await expect(agent.loadSession()).resolves.toBe(true);
+    expect(agent.messages).toEqual([
+      { role: "tool", content: [] },
+      { role: "user", content: [textBlock("keep")] },
+    ]);
+  });
+
   it("saves and loads sessions through an injected store", async () => {
     const firstClient = createModelClient(async () => response([textBlock("done")]));
     const savedSnapshots: Array<Parameters<RuntimeSessionStore["save"]>[1]> = [];

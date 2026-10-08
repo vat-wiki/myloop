@@ -18,6 +18,7 @@ export type {
   RuntimeSessionSnapshot,
   RuntimeSessionStore,
 } from "./session.js";
+export { repairRuntimeSessionSnapshot } from "./session.js";
 export * from "./artifacts.js";
 export * from "./user-input.js";
 export type { AgentEventMap, EventListener } from "./events.js";

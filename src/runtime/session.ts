@@ -38,6 +38,36 @@ export function assertRuntimeSessionSnapshot(value: unknown): asserts value is R
   assertPairedToolCalls(snapshot.messages);
 }
 
+export function repairRuntimeSessionSnapshot(snapshot: RuntimeSessionSnapshot): RuntimeSessionSnapshot {
+  const toolCallIds = new Set<string>();
+  const answeredToolCallIds = new Set<string>();
+  for (const message of snapshot.messages) {
+    for (const block of message.content) {
+      if (block.type === "tool_call") toolCallIds.add(block.id);
+      if (block.type === "tool_result") answeredToolCallIds.add(block.toolCallId);
+    }
+  }
+
+  const messages = snapshot.messages
+    .map((message) => ({
+      ...message,
+      content: message.content.flatMap((block) => {
+        if (block.type === "tool_call" && !answeredToolCallIds.has(block.id)) {
+          return [{ type: "text" as const, text: `[中断的工具调用 ${block.name}（${block.id}）：未记录结果]` }];
+        }
+        if (block.type === "tool_result" && !toolCallIds.has(block.toolCallId)) {
+          return [];
+        }
+        return [block];
+      }),
+    }))
+    ;
+
+  const repaired: RuntimeSessionSnapshot = { ...snapshot, messages };
+  assertRuntimeSessionSnapshot(repaired);
+  return repaired;
+}
+
 function assertSessionMessage(message: unknown): asserts message is AgentMessage {
   if (typeof message !== "object" || message === null || Array.isArray(message)) {
     throw new Error("session snapshot message must be an object");

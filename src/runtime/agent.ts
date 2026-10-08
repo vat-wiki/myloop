@@ -34,6 +34,7 @@ import {
 } from "./user-input.js";
 import {
   assertRuntimeSessionSnapshot,
+  repairRuntimeSessionSnapshot,
   cloneSessionMessages,
   type RuntimeSessionSnapshot,
   type RuntimeSessionStore,
@@ -208,7 +209,7 @@ class AgentRuntime {
     this.#assertIdle("load");
     const snapshot = await this.sessionStore.load(sessionId);
     if (snapshot) {
-      this.restore(snapshot);
+      this.restore(repairRuntimeSessionSnapshot(snapshot));
     } else {
       this.messages = [];
     }
