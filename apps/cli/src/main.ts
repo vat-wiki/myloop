@@ -6,6 +6,7 @@ import { createInterface } from "node:readline/promises";
 import type { SingleAgent } from "myloop/agent";
 import { createAppAgent, loadAppSkills, type AppSessionSummary } from "@myloop/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
+import { createInteractiveLoop } from "./interactive.js";
 import { composeCliSystem, loadAgentsInstructions, loadSystemPrompt } from "./prompt.js";
 import {
   printAgentPrompts,
@@ -286,16 +287,30 @@ async function runInteractive({
     output: process.stdout,
     prompt: formatInteractivePrompt(process.cwd()),
   });
-  let exitCode = 0;
-  let closed = false;
+  const loop = createInteractiveLoop({
+    agent,
+    submit: async (input) => {
+      await runTask({
+        agent,
+        input,
+        saveSession: () => agent.saveSession(),
+        output: process.stdout,
+        status: (message) => process.stderr.write(`${message}\n`),
+        trace: (text) => process.stderr.write(text),
+        color: isColorEnabled(process.env, process.stderr),
+        width: process.stderr.columns,
+      });
+    },
+    write: (text) => process.stderr.write(text),
+    onIdle: () => {
+      process.stderr.write("\n");
+      readline.prompt();
+    },
+  });
 
   readline.on("SIGINT", () => {
-    if (agent.running) {
-      agent.abort(new Error("interrupted"));
-      return;
-    }
-    closed = true;
-    readline.close();
+    loop.interrupt();
+    if (loop.isStopped()) readline.close();
   });
 
   if (printPrompts) {
@@ -308,45 +323,13 @@ async function runInteractive({
     });
   }
 
-  const submit = async (rawInput: string): Promise<void> => {
-    const input = rawInput.trim();
-    if (!input) return;
-    if (input === "/exit" || input === "/quit") {
-      closed = true;
-      readline.close();
-      return;
-    }
-    if (input === "/help") {
-      process.stderr.write("Commands: /exit · Ctrl+C interrupts, second Ctrl+C exits\n");
-      return;
-    }
-    if (agent.running) {
-      process.stderr.write("agent is running\n");
-      return;
-    }
-
-    await runTask({
-      agent,
-      input,
-      saveSession: () => agent.saveSession(),
-      output: process.stdout,
-      status: (message) => process.stderr.write(`${message}\n`),
-      trace: (text) => process.stderr.write(text),
-      color: isColorEnabled(process.env, process.stderr),
-      width: process.stderr.columns,
-    });
-  };
-
   readline.prompt();
   for await (const line of readline) {
-    await submit(String(line));
-    if (!closed) {
-      process.stderr.write("\n");
-      readline.prompt();
-    }
+    loop.handleLine(String(line));
+    if (loop.isStopped()) break;
   }
 
-  return exitCode;
+  return 0;
 }
 
 export function formatInteractivePrompt(cwd: string, home = homedir()): string {
