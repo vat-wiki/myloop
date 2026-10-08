@@ -54,7 +54,18 @@ describe("interactive loop", () => {
 
     expect(submit).not.toHaveBeenCalled();
     expect(output).toContainEqual("agent is running — input queued\n");
+    expect(output.some((line) => line.includes("queued task"))).toBe(true);
     expect(loop.isStopped()).toBe(false);
+  });
+
+  it("echoes queue status immediately for each line typed while running", () => {
+    const agent = createAgent({ running: true });
+    const loop = createLoop(agent);
+    loop.handleLine("first");
+    loop.handleLine("second");
+
+    expect(output.filter((line) => line.includes("queued:")).length).toBe(2);
+    expect(output.at(-1)).toContain('"first", "second"');
   });
 
   it("aborts a running agent on interrupt and discards queued input", async () => {

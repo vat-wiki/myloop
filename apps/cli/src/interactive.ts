@@ -21,6 +21,11 @@ export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }
   let processing = false;
   let stopped = false;
 
+  function writeQueueStatus(): void {
+    if (queue.length === 0) return;
+    write(`[${queue.length} queued: ${queue.map((line) => JSON.stringify(line.trim())).join(", ")}]\n`);
+  }
+
   async function drain(): Promise<void> {
     if (processing) return;
     processing = true;
@@ -41,6 +46,7 @@ export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }
         }
         if (agent.running) {
           write("agent is running — input queued\n");
+          writeQueueStatus();
           queue.push(input);
           return;
         }
@@ -56,6 +62,11 @@ export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }
 
   return {
     handleLine(rawLine: string): void {
+      if (agent.running) {
+        queue.push(rawLine);
+        if (rawLine.trim()) writeQueueStatus();
+        return;
+      }
       queue.push(rawLine);
       void drain();
     },
