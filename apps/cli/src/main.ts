@@ -194,6 +194,15 @@ export async function runBotLoop({
     readline.close();
   });
 
+  const wasRaw = process.stdin.isRaw ?? false;
+  process.stdin.setRawMode?.(true);
+  const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }): void => {
+    if (key?.name === "escape" && !key.ctrl && agent.running) {
+      agent.abort(new Error("interrupted"));
+    }
+  };
+  process.stdin.on("keypress", onKeypress);
+
   const submit = createBotSubmit({ agent, color, width });
   readline.prompt();
   for await (const line of readline) {
@@ -205,6 +214,9 @@ export async function runBotLoop({
     if (botStopped) break;
     readline.prompt();
   }
+
+  process.stdin.setRawMode?.(wasRaw);
+  process.stdin.off("keypress", onKeypress);
 
   botStopped = true;
   offHeartbeat();
