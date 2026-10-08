@@ -13,6 +13,11 @@ export type AgentConfig = {
   sessionId?: string;
   systemPrompt?: string | false;
   thinking?: boolean;
+  heartbeat?: {
+    intervalMs?: number;
+  };
+  bot?: boolean;
+  botPrompt?: string;
 };
 
 export type ConfigSources = {
@@ -135,6 +140,9 @@ function validateAgentConfig(value: unknown): AgentConfig {
     "sessionId",
     "systemPrompt",
     "thinking",
+    "heartbeat",
+    "bot",
+    "botPrompt",
   ]);
 
   const config: AgentConfig = {};
@@ -215,6 +223,40 @@ function validateAgentConfig(value: unknown): AgentConfig {
       throw new Error("config thinking must be a boolean");
     }
     config.thinking = input.thinking;
+  }
+
+  if (input.heartbeat !== undefined) {
+    if (typeof input.heartbeat !== "object" || input.heartbeat === null || Array.isArray(input.heartbeat)) {
+      throw new Error("config heartbeat must be an object");
+    }
+    const heartbeat = input.heartbeat as Record<string, unknown>;
+    const unknownHeartbeatField = Object.keys(heartbeat).find((field) => field !== "intervalMs");
+    if (unknownHeartbeatField !== undefined) {
+      throw new Error(`config heartbeat has unknown field: ${unknownHeartbeatField}`);
+    }
+    if (heartbeat.intervalMs !== undefined) {
+      if (typeof heartbeat.intervalMs !== "number" || !Number.isFinite(heartbeat.intervalMs) || heartbeat.intervalMs <= 0) {
+        throw new Error("config heartbeat.intervalMs must be a positive number");
+      }
+      config.heartbeat = { intervalMs: heartbeat.intervalMs };
+    } else {
+      config.heartbeat = {};
+    }
+  }
+
+  if (input.bot !== undefined) {
+    if (typeof input.bot !== "boolean") {
+      throw new Error("config bot must be a boolean");
+    }
+    config.bot = input.bot;
+  }
+
+  if (input.botPrompt !== undefined) {
+    assertString(input.botPrompt, "config botPrompt");
+    if (!input.botPrompt.trim()) {
+      throw new Error("config botPrompt cannot be empty");
+    }
+    config.botPrompt = input.botPrompt;
   }
 
   return config;
