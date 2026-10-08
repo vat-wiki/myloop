@@ -83,6 +83,33 @@ describe("parseSkill", () => {
     );
   });
 
+  it("tolerates a BOM, CRLF line endings, and quoted values", () => {
+    const skill = parseSkillContents(
+      "\uFEFF---\r\nname: \"bom-skill\"\r\ndescription: 'Across line endings'\r\n---\r\n\r\nInstructions.\r\n",
+    );
+
+    expect(skill.name).toBe("bom-skill");
+    expect(skill.description).toBe("Across line endings");
+    expect(skill.instructions).toBe("Instructions.");
+  });
+
+  it("rejects duplicate frontmatter fields and malformed lines", () => {
+    expect(() => parseSkillContents("---\nname: a\nname: b\ndescription: d\n---\nBody")).toThrow(
+      "duplicate frontmatter field \"name\"",
+    );
+    expect(() => parseSkillContents("---\nnot a pair\ndescription: d\n---\nBody")).toThrow(
+      "invalid frontmatter line",
+    );
+    expect(() => parseSkillContents("---\ndescription: d\n---\nBody")).toThrow("name is required");
+    expect(() => parseSkillContents("---\nname: a\ndescription: d\n---\n   \n")).toThrow(
+      "instructions cannot be empty",
+    );
+  });
+
+  it("rejects a source with neither contents nor path", async () => {
+    await expect(parseSkill({})).rejects.toThrow("skill source must include contents or path");
+  });
+
   async function makeTemporaryDirectory(): Promise<string> {
     const directory = await mkdtemp(join(tmpdir(), "myloop-skill-"));
     temporaryDirectories.push(directory);

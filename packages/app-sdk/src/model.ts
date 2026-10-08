@@ -15,6 +15,8 @@ export type CreateAppModelClientOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudgetTokens?: number;
+  fetch?: typeof fetch;
+  transport?: import("myloop/clients/http").HttpTransport;
 };
 
 export function createAppModelClient(options: CreateAppModelClientOptions): ModelClient {
@@ -22,6 +24,8 @@ export function createAppModelClient(options: CreateAppModelClientOptions): Mode
     apiKey: options.apiKey,
     baseURL: options.baseURL,
     artifactStore: options.artifactStore,
+    fetch: options.fetch,
+    transport: options.transport,
   };
 
   if (options.protocol === "anthropic") {
@@ -47,5 +51,6 @@ export function createAppModelClient(options: CreateAppModelClientOptions): Mode
     model: options.model,
     maxTokens: options.maxTokens,
     contextWindowTokens: options.contextWindowTokens,
+    reasoning: options.thinking ? { effort: "medium", summary: "auto" } : undefined,
   });
 }

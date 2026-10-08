@@ -5,9 +5,12 @@ import {
   documentBlock,
   imageBlock,
   normalizeContent,
+  createToolMessage,
   textBlock,
+  thinkingBlock,
   toolCallBlock,
   toolResultBlock,
+  videoBlock,
 } from "../../src/runtime/messages.js";
 
 describe("message helpers", () => {
@@ -48,6 +51,22 @@ describe("message helpers", () => {
       toolCallId: "call-1",
       content: "ok",
       isError: true,
+    });
+
+    expect(documentBlock(source)).toEqual({
+      type: "document",
+      mediaType: "application/pdf",
+      source,
+    });
+    expect(videoBlock("video/mp4", source)).toEqual({
+      type: "video",
+      mediaType: "video/mp4",
+      source,
+    });
+    expect(thinkingBlock("hmm")).toEqual({ type: "thinking", thinking: "hmm" });
+    expect(createToolMessage([toolResultBlock("call-1", "ok")])).toEqual({
+      role: "tool",
+      content: [toolResultBlock("call-1", "ok", false)],
     });
   });
 });

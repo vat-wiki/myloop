@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAgentLogger } from "../../src/runtime/logging.js";
+import { createAgentLogger, isAgentLogLevel } from "../../src/runtime/logging.js";
 
 describe("runtime logger", () => {
   const temporaryDirectories: Array<string> = [];
@@ -118,3 +118,17 @@ async function readEvents(path: string): Promise<Array<Record<string, any>>> {
   const content = await readFile(path, "utf8");
   return content.trimEnd().split("\n").map((line) => JSON.parse(line));
 }
+
+describe("isAgentLogLevel", () => {
+  it("accepts the three documented levels and rejects anything else", () => {
+    for (const level of ["off", "events", "errors"] as const) {
+      expect(isAgentLogLevel(level)).toBe(true);
+    }
+
+    expect(isAgentLogLevel("debug")).toBe(false);
+    expect(isAgentLogLevel("EVENTS")).toBe(false);
+    expect(isAgentLogLevel(1)).toBe(false);
+    expect(isAgentLogLevel(null)).toBe(false);
+    expect(isAgentLogLevel(undefined)).toBe(false);
+  });
+});

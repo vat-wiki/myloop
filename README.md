@@ -246,32 +246,6 @@ npm test
 
 `npm test` 当前执行 TypeScript 类型检查。`npm run build` 会把 `src/*.ts` 编译到 `dist/`。
 
-## TUI 配置文件
-
-TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更新版本，并启用 Node FFI。
-
-`myloop-tui` 会自动读取 JSON 配置文件。全局配置是 `~/.agents/myloop.json`；非 production 环境还会从当前目录向上查找 `.agents/myloop.json`。配置合并很简单：project 字段直接覆盖全局同名字段。最终优先级是：CLI 参数 > project 配置 > 全局配置 > 环境变量和内置默认值。
-
-```json
-{
-  "protocol": "anthropic",
-  "model": "claude-sonnet-4-5",
-  "baseURL": "https://api.anthropic.com/v1",
-  "apiKey": "local-development-key-only",
-  "allowLocalFiles": true,
-  "contextWindowTokens": 131072,
-  "sessionId": "work-1"
-}
-```
-
-`protocol` 只描述 API 协议；`model` 必须通过配置、CLI 或环境变量提供，SDK 不维护模型列表。`apiKey` 可以直接写入本地开发配置，但不要提交包含真实 key 的配置文件；不配置时默认读取 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`。
-
-`contextWindowTokens` 覆盖协议默认上下文窗口；未配置时 `openai-chat` 和 `openai-responses` 默认 `128000`，`anthropic` 默认 `200000`。也可以用 `--context-window-tokens <tokens>` 临时覆盖。
-
-未指定 `sessionId` 时，TUI 每次启动都会开启新会话；配置 `sessionId` 或传入 `--session-id <id>` 时才在启动时恢复。会话文件保存在 `.agents/myloop/sessions/`，运行中输入 `/sessions` 可列出并切换，`/reset` 会清空当前会话。
-
-会话文件包含任务和回复；不要把 `.agents` 提交到公共仓库。
-
 ## 快速开始
 
 ```ts

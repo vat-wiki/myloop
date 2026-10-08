@@ -346,3 +346,128 @@ describe("Agent", () => {
     ]);
   });
 });
+
+describe("Agent compaction", () => {
+  function pressureClient(complete: ModelClient["complete"], contextWindowTokens: number): ModelClient {
+    return {
+      complete,
+      context: {
+        contextWindowTokens,
+        estimateRequestTokens: (request: ModelRequest) =>
+          Math.ceil(JSON.stringify(request.messages).length / 4),
+      },
+    };
+  }
+
+  it("compacts automatically when pressure exceeds the threshold and emits context_compacted", async () => {
+    const requests: Array<ModelRequest["messages"]> = [];
+    const complete = vi.fn(async (request: ModelRequest) => {
+      requests.push(structuredClone(request.messages));
+      if (requests.length === 1) {
+        return response([textBlock("previous conversation")]);
+      }
+      return response([textBlock("summarized answer")]);
+    });
+    const agent = new AgentRuntime({
+      modelClient: pressureClient(complete, 20),
+      compactionThreshold: 0.5,
+    });
+    const compacted: Array<{ before: number; after: number }> = [];
+    agent.on("context_compacted", (event) => {
+      compacted.push({ before: event.before.length, after: event.after.length });
+    });
+
+    await agent.run("hello");
+
+    expect(compacted).toEqual([{ before: 1, after: 1 }]);
+    expect(agent.messages).toEqual([{
+      role: "user",
+      content: [textBlock("[Context summary] previous conversation")],
+    }, { role: "assistant", content: [textBlock("summarized answer")] }]);
+    expect(requests[0]).toEqual([
+      { role: "user", content: [textBlock("hello")] },
+      {
+        role: "user",
+        content: [textBlock("请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。")],
+      },
+    ]);
+    expect(requests[1]).toEqual([{
+      role: "user",
+      content: [textBlock("[Context summary] previous conversation")],
+    }]);
+  });
+
+  it("manual compact() collapses history and reports droppedMessageCount", async () => {
+    const complete = vi.fn(async () => response([textBlock("the user greeted the assistant")]));
+    const agent = new AgentRuntime({ modelClient: createModelClient(complete) });
+
+    await agent.run("hello");
+    const result = await agent.compact();
+
+    expect(result.droppedMessageCount).toBe(2);
+    expect(result.messages).toHaveLength(1);
+    expect(agent.messages).toEqual([{
+      role: "user",
+      content: [textBlock("[Context summary] the user greeted the assistant")],
+    }]);
+  });
+
+  it("rejects compact() while the agent is running", async () => {
+    const modelClient = createModelClient(async () => response([textBlock("done")]));
+    const agent = new AgentRuntime({ modelClient });
+    const running = agent.run("hello");
+    await expect(agent.compact()).rejects.toThrow("cannot compact while agent is running");
+    await running;
+  });
+
+  it("throws when the compaction summary is empty", async () => {
+    const modelClient = createModelClient(async () => response([thinkingBlock("only thinking")]));
+    const agent = new AgentRuntime({ modelClient });
+    await agent.run("hello");
+
+    await expect(agent.compact()).rejects.toThrow("empty compaction summary");
+  });
+});
+
+describe("Agent abort", () => {
+  it("aborts an in-flight run and rejects the run promise", async () => {
+    let abortHook: ((reason: unknown) => void) | undefined;
+    const modelClient = createModelClient(async ({ signal }) => new Promise<ModelResponse>((_resolve, reject) => {
+      abortHook = (reason) => reject(new Error(String(reason)));
+      signal?.addEventListener("abort", () => abortHook?.(signal.reason));
+    }));
+    const agent = new AgentRuntime({ modelClient });
+
+    const running = agent.run("hello");
+    agent.abort("user cancelled");
+
+    await expect(running).rejects.toThrow("user cancelled");
+    expect(agent.running).toBe(false);
+  });
+
+  it("marks the request signal aborted for the model client", async () => {
+    let observedSignal: AbortSignal | undefined;
+    const modelClient = createModelClient(async ({ signal }) => {
+      observedSignal = signal;
+      return new Promise<ModelResponse>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const agent = new AgentRuntime({ modelClient });
+
+    const running = agent.run("hello");
+    await vi.waitFor(() => expect(observedSignal).toBeDefined());
+    agent.abort();
+    await expect(running).rejects.toThrow();
+    expect(observedSignal?.aborted).toBe(true);
+  });
+
+  it("does not abort anything when the agent is idle", async () => {
+    const modelClient = createModelClient(async () => response([textBlock("done")]));
+    const agent = new AgentRuntime({ modelClient });
+
+    expect(() => agent.abort()).not.toThrow();
+    await agent.run("hello");
+    expect(agent.messages).toHaveLength(2);
+  });
+});
