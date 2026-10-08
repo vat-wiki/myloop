@@ -7,6 +7,7 @@ import type { SingleAgent } from "myloop/agent";
 import { createAppAgent, loadAppSkills, type AppSessionSummary } from "@myloop/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
 import { createInteractiveLoop } from "./interactive.js";
+import { createSpinner } from "./spinner.js";
 import { composeCliSystem, loadAgentsInstructions, loadSystemPrompt } from "./prompt.js";
 import {
   printAgentPrompts,
@@ -290,16 +291,40 @@ async function runInteractive({
   const loop = createInteractiveLoop({
     agent,
     submit: async (input) => {
+      const spinner = createSpinner();
+      let spinnerActive = false;
+      const stopSpinner = (): void => {
+        if (!spinnerActive) return;
+        spinnerActive = false;
+        spinner.stop();
+      };
+      const statusWithSpinner = (message: string): void => {
+        spinner.suspend();
+        process.stderr.write(message);
+      };
+      const removeEnd = agent.on("end", () => stopSpinner());
+      const removeError = agent.on("error", () => stopSpinner());
+      const removeToolStart = agent.on("tool_start", ({ name }) => {
+        if (spinnerActive) return;
+        spinnerActive = true;
+        spinner.start(`${name}…`);
+      });
+      const removeToolEnd = agent.on("tool_end", () => stopSpinner());
       await runTask({
         agent,
         input,
         saveSession: () => agent.saveSession(),
         output: process.stdout,
-        status: (message) => process.stderr.write(`${message}\n`),
-        trace: (text) => process.stderr.write(text),
+        status: (message) => statusWithSpinner(`${message}\n`),
+        trace: (text) => statusWithSpinner(text),
         color: isColorEnabled(process.env, process.stderr),
         width: process.stderr.columns,
       });
+      stopSpinner();
+      removeEnd();
+      removeError();
+      removeToolStart();
+      removeToolEnd();
     },
     write: (text) => process.stderr.write(text),
     onIdle: () => {
