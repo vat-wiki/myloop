@@ -25,5 +25,7 @@ export {
   createAppSessionId,
   FileSessionStore,
   isValidAppSessionId,
+  type AppSessionSummary,
   type FileSessionStoreOptions,
+  type StoredAppSessionSnapshot,
 } from "./session.js";

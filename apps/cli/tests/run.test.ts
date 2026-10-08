@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatContextUsage,
   formatDuration,
   formatEventDivider,
   formatToolOutput,
+  formatModelUsage,
   formatTimestamp,
+  formatTokensInK,
   printAgentPrompts,
+  printSessionHistory,
   runTask,
 } from "../src/run.js";
 import type { RunTaskOptions } from "../src/run.js";
@@ -26,6 +30,52 @@ function createFakeOutput(): { stream: NodeJS.WriteStream; text: string } {
 }
 
 describe("CLI task runner", () => {
+  it("renders restored user, assistant, and tool history", () => {
+    const statusMessages: Array<string> = [];
+    const output = createFakeOutput();
+
+    printSessionHistory({
+      messages: [
+        { role: "user", content: [{ type: "text", text: "run tests" }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_call", id: "tool-1", name: "bash", arguments: { command: "npm test" } },
+            { type: "text", text: "tests pass" },
+          ],
+        },
+        {
+          role: "tool",
+          content: [{ type: "tool_result", toolCallId: "tool-1", content: "exit:0\nstdout:\nok" }],
+        },
+      ],
+      output: output.stream,
+      status: (message) => statusMessages.push(message),
+      trace: () => {},
+    });
+
+    expect(statusMessages.join("\n")).toMatch(/──── restored · 3 messages ─+/);
+    expect(statusMessages.join("\n")).toMatch(/──── user ─+/);
+    expect(output.text).toContain("run tests\ntests pass\n");
+    expect(statusMessages.join("\n")).toContain("$ npm test");
+    expect(statusMessages.join("\n")).toContain("ok");
+  });
+
+  it("does not render empty restored history", () => {
+    const statusMessages: Array<string> = [];
+    const output = createFakeOutput();
+
+    printSessionHistory({
+      messages: [],
+      output: output.stream,
+      status: (message) => statusMessages.push(message),
+      trace: () => {},
+    });
+
+    expect(statusMessages).toEqual([]);
+    expect(output.text).toBe("");
+  });
+
   it("prints system and tool declarations without writing stdout", async () => {
     const statusMessages: Array<string> = [];
     const traceText: Array<string> = [];
@@ -125,7 +175,7 @@ describe("CLI task runner", () => {
 
     expect(exitCode).toBe(1);
     expect(statusMessages.join("\n")).toContain("model failed");
-    expect(saved).toBe(true);
+    expect(saved).toBe(false);
   });
 
   it("streams thinking, model output, commands, and tool results", async () => {
@@ -146,6 +196,10 @@ describe("CLI task runner", () => {
         abort() {},
         reset() {},
         run: async () => {
+          emit("context_pressure", {
+            pressure: { usedTokens: 24_000, limitTokens: 200_000, ratio: 0.12 },
+          });
+          emit("model_response");
           emit("thinking_delta", { delta: "I should run tests." });
           emit("tool_start", { name: "bash", input: { command: "npm test" } });
           emit("tool_end", { name: "bash", output: "exit:0\nstdout:\nall tests pass" });
@@ -162,6 +216,7 @@ describe("CLI task runner", () => {
     });
 
     expect(exitCode).toBe(0);
+    expect(statusMessages.join("\n")).toMatch(/──── context\.estimate · context 24k\/200k \(12\.0%\) ─+ \d{2}:\d{2}:\d{2}/);
     expect(statusMessages.join("\n")).toMatch(/──── thinking ─+ \d{2}:\d{2}:\d{2}/);
     expect(statusMessages.join("\n")).toMatch(/──── tool\.start · bash ─+ \d{2}:\d{2}:\d{2}/);
     expect(statusMessages.join("\n")).toContain("$ npm test");
@@ -211,6 +266,50 @@ describe("CLI task runner", () => {
     expect(statusMessages.join("\n")).toContain("\x1b[32m");
   });
 
+  it("shows actual model usage returned by the client", async () => {
+    const statusMessages: Array<string> = [];
+    const output = createFakeOutput();
+    const listeners = new Map<string, (event?: unknown) => void>();
+    const emit = (event: string, eventPayload?: unknown): void => {
+      listeners.get(event)?.(eventPayload);
+    };
+
+    await runTask({
+      agent: {
+        on(event, listener) {
+          listeners.set(event, listener as (event?: unknown) => void);
+          return () => {};
+        },
+        abort() {},
+        reset() {},
+        run: async () => {
+          emit("text_delta", { delta: "done" });
+          emit("model_response", {
+            response: {
+              usage: {
+                inputTokens: 1_234,
+                outputTokens: 56,
+                totalTokens: 1_290,
+                cacheReadInputTokens: 78,
+                reasoningOutputTokens: 9,
+              },
+            },
+          });
+          return { answer: "done", response: { stopReason: "end" } };
+        },
+      },
+      input: "run tests",
+      saveSession: async () => {},
+      output: output.stream,
+      status: (message) => statusMessages.push(message),
+      trace: () => {},
+    });
+
+    expect(statusMessages.join("\n")).toMatch(/──── model\.usage · in 1234 · out 56 · total 1290/);
+    expect(statusMessages.join("\n")).toContain("cache-read 78");
+    expect(statusMessages.join("\n")).toContain("reasoning 9");
+  });
+
   it("warns when a partial answer is truncated by max_tokens", async () => {
     const statusMessages: Array<string> = [];
     const output = createFakeOutput();
@@ -257,5 +356,25 @@ describe("CLI task runner", () => {
     expect(divider.endsWith("12:34:56")).toBe(true);
     expect(divider.startsWith("──── ")).toBe(true);
     expect(formatTimestamp(new Date(2026, 0, 1, 9, 8, 7))).toBe("09:08:07");
+  });
+
+  it("formats context usage in k tokens", () => {
+    expect(formatContextUsage({ usedTokens: 1_500, limitTokens: 200_000, ratio: 0.0075 })).toBe(
+      "context 1.5k/200k (0.8%)",
+    );
+    expect(formatContextUsage({ usedTokens: 500 })).toBe("context 0.5k");
+    expect(formatTokensInK(200_000)).toBe("200k");
+  });
+
+  it("formats model usage", () => {
+    expect(formatModelUsage({
+      inputTokens: 1_234,
+      outputTokens: 56,
+      totalTokens: 1_290,
+      cacheReadInputTokens: 78,
+      cacheCreationInputTokens: 12,
+      reasoningOutputTokens: 9,
+    })).toBe("in 1234 · out 56 · total 1290 · cache-read 78 · cache-create 12 · reasoning 9");
+    expect(formatModelUsage({})).toBe("");
   });
 });

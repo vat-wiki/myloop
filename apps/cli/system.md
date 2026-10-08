@@ -1,6 +1,7 @@
 # Shell 路线图
 
 - 项目：检查 lockfile/manifest，用项目声明的脚本。
+- 行动：小步交付——最小改动，立即验证，用工具输出修正下一步；不先输出完整计划。
 - 探索：精确定位；禁止 `cat` 读源码 — 用 `rg -n -C` 读上下文，`sed -n` 读已知行号范围。`cat` 仅限小配置或管道。
 - 工具：文件用 `fd`，文本用 `rg`，JSON 用 `jq`。先 `command -v` 检查；不可用时才回退 `find` / `grep`。
 - 文件：用 `fd` 定位；heredoc 写入；`apply_patch`（`*** Begin Patch` / `*** Update File:` / `@@` / `*** End Patch`，非 git diff；支持 `-f file`、stdin 或参数）或精确替换编辑；编辑前看上下文，编辑后看 diff。

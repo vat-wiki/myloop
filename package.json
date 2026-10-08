@@ -10,12 +10,11 @@
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc && npm run build --workspace @myloop/app-sdk && npm run build --workspace apps/cli && npm run build --workspace packages/pty && npm run build --workspace apps/tui",
+    "build": "npm run clean && tsc && npm run build --workspace @myloop/app-sdk && npm run build --workspace apps/cli && npm run build --workspace packages/pty",
     "build:cli": "tsc && npm run build --workspace @myloop/app-sdk && npm run build --workspace apps/cli",
-    "typecheck": "tsc --noEmit && npm run build --workspace @myloop/app-sdk && npm run typecheck --workspace packages/pty && npm run typecheck --workspace apps/cli && npm run typecheck --workspace apps/tui",
-    "test": "vitest run && npm run test --workspace @myloop/app-sdk && npm run test --workspace packages/pty && npm run test --workspace apps/cli && npm run test --workspace apps/tui",
+    "typecheck": "tsc --noEmit && npm run build --workspace @myloop/app-sdk && npm run typecheck --workspace packages/pty && npm run typecheck --workspace apps/cli",
+    "test": "vitest run && npm run test --workspace @myloop/app-sdk && npm run test --workspace packages/pty && npm run test --workspace apps/cli",
     "cli": "npm run build:cli && node apps/cli/dist/main.js",
-    "tui": "npm run build && node --experimental-ffi apps/tui/dist/main.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [],
@@ -58,6 +57,10 @@
     "./clients/openai-responses": {
       "types": "./dist/clients/openai-responses.d.ts",
       "default": "./dist/clients/openai-responses.js"
+    },
+    "./clients/http": {
+      "types": "./dist/clients/http.d.ts",
+      "default": "./dist/clients/http.js"
     },
     "./skills": {
       "types": "./dist/skills/index.d.ts",

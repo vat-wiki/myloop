@@ -28,7 +28,7 @@ describe("app session store", () => {
     await store.save("work-1", snapshot);
 
     expect(store.sessionPath("work-1")).toBe(join(cwd, ".agents", "myloop", "sessions", "work-1.json"));
-    await expect(store.load("work-1")).resolves.toEqual(snapshot);
+    await expect(store.load("work-1")).resolves.toEqual({ ...snapshot, createdAt: expect.any(String) });
     await expect(store.list()).resolves.toEqual(["work-1", "work-2"]);
     expect(isValidAppSessionId("work.1_2")).toBe(true);
     expect(() => assertAppSessionId("../escape")).toThrow("session id");
@@ -59,7 +59,10 @@ describe("app session store", () => {
 
     await store.save("safe", snapshot);
 
-    expect(JSON.parse(await readFile(store.sessionPath("safe"), "utf8"))).toEqual(snapshot);
+    expect(JSON.parse(await readFile(store.sessionPath("safe"), "utf8"))).toEqual({
+      ...snapshot,
+      createdAt: expect.any(String),
+    });
   });
 });
 

@@ -13,10 +13,15 @@ export type CliOptions = {
   allowLocalFiles: boolean;
   compactionThreshold?: number;
   sessionId?: string;
+  continueLastSession: boolean;
   systemPrompt?: string;
   systemPromptEnabled: boolean;
   printPrompts: boolean;
+  listSessions: boolean;
   thinking: boolean;
+  heartbeatIntervalMs?: number;
+  bot: boolean;
+  botPrompt?: string;
   log: AgentLogLevel;
   configPath?: string;
   prompt?: string;
@@ -53,6 +58,9 @@ export function parseCliArgs(
   let printPrompts = true;
   let log: AgentLogLevel = "events";
   let configPath: string | undefined;
+  let continueLastSession = false;
+  let listSessions = false;
+  let bot = false;
   const positionalArguments: Array<string> = [];
   let help = false;
 
@@ -64,6 +72,10 @@ export function parseCliArgs(
     if (argument === "--") {
       positionalArguments.push(...argv.slice(index + 1));
       break;
+    } else if (argument === "--continue" || argument === "-c") {
+      continueLastSession = true;
+    } else if (argument === "--list-sessions" || argument === "-l") {
+      listSessions = true;
     } else if (argument === "--help" || argument === "-h") {
       help = true;
     } else if (argument === "--session-id") {
@@ -82,6 +94,8 @@ export function parseCliArgs(
       systemPromptEnabled = false;
     } else if (argument === "--no-print-prompts") {
       printPrompts = false;
+    } else if (argument === "--bot") {
+      bot = true;
     } else if (argument === "--log") {
       const next = argv[index + 1];
       if (isAgentLogLevel(next)) {
@@ -115,8 +129,11 @@ export function parseCliArgs(
   const selectedModel = config.model ?? (
     selectedProtocol === "anthropic" ? env.ANTHROPIC_MODEL : env.OPENAI_MODEL
   );
-  if (!selectedModel && !help) {
+  if (!selectedModel && !help && !listSessions) {
     throw new Error("model is required");
+  }
+  if (continueLastSession && sessionId) {
+    throw new Error("--continue cannot be used with --session-id");
   }
 
   return {
@@ -126,13 +143,18 @@ export function parseCliArgs(
     baseURL: config.baseURL,
     allowLocalFiles: config.allowLocalFiles ?? false,
     compactionThreshold: config.compactionThreshold,
-    sessionId: sessionId ?? config.sessionId,
+    sessionId: continueLastSession ? undefined : sessionId ?? config.sessionId,
+    continueLastSession,
     systemPrompt: systemPromptEnabled
       ? systemPrompt ?? (typeof config.systemPrompt === "string" ? config.systemPrompt : undefined)
       : undefined,
     systemPromptEnabled: systemPromptEnabled && (systemPrompt !== undefined || config.systemPrompt !== false),
     printPrompts,
+    listSessions,
     thinking: config.thinking ?? false,
+    heartbeatIntervalMs: config.heartbeat?.intervalMs,
+    bot,
+    botPrompt: config.botPrompt,
     log,
     configPath,
     prompt: positionalArguments.join(" ").trim() || undefined,
@@ -151,9 +173,12 @@ export function formatCliHelp(): string {
     "Options:",
     "  --config <file>              Use a specific config file",
     "  --session-id <id>            Resume a session",
+    "  -c, --continue               Resume the most recently saved session",
+    "  -l, --list-sessions          List saved sessions",
     "  --system-prompt <file>       Add a system prompt file",
     "  --no-system-prompt           Disable prompt and AGENTS.md loading",
     "  --no-print-prompts           Hide system prompt and tool declarations",
+    "  --bot                        Bot mode: keep the agent alive with heartbeats",
     "  --log[=<off|events|errors>]  Write model/tool audit logs (default: events)",
     "  -h, --help",
     "",

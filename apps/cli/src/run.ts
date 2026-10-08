@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "myloop/runtime";
+import type { AgentMessage, ContextPressure, ModelUsage, ToolDefinition } from "myloop/runtime";
 
 export type RunTaskOptions = {
   agent: {
@@ -8,7 +8,9 @@ export type RunTaskOptions = {
     on(event: "tool_end", listener: (event: { id?: string; name?: string; output: unknown }) => void): () => void;
     on(event: "thinking_delta", listener: (event: { delta: string }) => void): () => void;
     on(event: "text_delta", listener: (event: { delta: string }) => void): () => void;
+    on(event: "context_pressure", listener: (event: { pressure: ContextPressure }) => void): () => void;
     on(event: "assistant_message", listener: () => void): () => void;
+    on(event: "model_response", listener: (event: { response: { usage?: ModelUsage } }) => void): () => void;
     abort(reason?: unknown): void;
     reset(): void;
     run(input: string): Promise<{
@@ -54,6 +56,7 @@ export async function runTask({
   let answerStreamed = false;
   const activeTools = new Map<string, { name: string; startedAt: number }>();
   let lastTool: { name: string; startedAt: number } | undefined;
+  let receivedModelResponse = false;
 
   const paintIfEnabled = (text: string, color: string): string => {
     return colorEnabled ? paint(text, color) : text;
@@ -114,11 +117,21 @@ export async function runTask({
   const removeThinkingDelta = agent.on("thinking_delta", ({ delta }) => {
     appendStream("thinking", delta);
   });
+  const removeContextPressure = agent.on("context_pressure", ({ pressure }) => {
+    event("context.estimate", { contextPressure: pressure });
+  });
   const removeTextDelta = agent.on("text_delta", ({ delta }) => {
     appendStream("text", delta);
   });
   const removeAssistantMessage = agent.on("assistant_message", () => {
     endStream();
+  });
+  const removeModelResponse = agent.on("model_response", (payload = { response: {} }) => {
+    const response = payload.response;
+    receivedModelResponse = true;
+    if (!response.usage) return;
+    endStream();
+    event("model.usage", { target: formatModelUsage(response.usage) });
   });
 
   try {
@@ -145,14 +158,91 @@ export async function runTask({
     removeToolStart();
     removeToolEnd();
     removeThinkingDelta();
+    removeContextPressure();
     removeTextDelta();
     removeAssistantMessage();
-    try {
-      await saveSession();
-    } catch (error) {
-      status(`failed to save session: ${errorText(error)}`);
+    if (receivedModelResponse) {
+      try {
+        await saveSession();
+      } catch (error) {
+        status(`failed to save session: ${errorText(error)}`);
+      }
     }
   }
+}
+
+export function printSessionHistory({
+  messages,
+  output,
+  status,
+  trace,
+  color = false,
+  width = 72,
+}: {
+  messages: ReadonlyArray<AgentMessage>;
+  output: NodeJS.WriteStream;
+  status: (message: string) => void;
+  trace: (text: string) => void;
+  color?: boolean;
+  width?: number;
+}): void {
+  if (messages.length === 0) return;
+
+  const paintIfEnabled = (text: string, colorCode: string): string => {
+    return color ? paint(text, colorCode) : text;
+  };
+  const event = (name: string, target?: string, colorCode: string = COLORS.dim): void => {
+    status(paintIfEnabled(
+      formatEventDivider(name, { ...(target === undefined ? {} : { target }) }, width),
+      colorCode,
+    ));
+  };
+
+  status(paintIfEnabled(
+    formatEventDivider("restored", { target: `${messages.length} messages` }, width),
+    COLORS.dim,
+  ));
+  for (const message of messages) {
+    if (message.role === "user") {
+      event("user");
+      const text = historyText(message.content);
+      if (text) output.write(`${text}\n`);
+      continue;
+    }
+    if (message.role === "assistant") {
+      event("assistant");
+      const text = historyText(message.content);
+      if (text) output.write(`${text}\n`);
+      for (const block of message.content) {
+        if (block.type === "tool_call") {
+          event("tool.start", block.name);
+          status(paintIfEnabled(`$ ${formatHistoryToolInput(block.arguments)}`, COLORS.cyan));
+        }
+      }
+      continue;
+    }
+
+    for (const block of message.content) {
+      if (block.type !== "tool_result") continue;
+      const resultColor = isFailedToolOutput(block.content) ? COLORS.red : COLORS.green;
+      event("tool.end", "tool", resultColor);
+      status(paintIfEnabled(formatToolOutput(block.content), resultColor));
+    }
+  }
+}
+
+function historyText(content: ReadonlyArray<AgentMessage["content"][number]>): string {
+  return content
+    .filter((block): block is Extract<AgentMessage["content"][number], { type: "text" }> => block.type === "text")
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+}
+
+function formatHistoryToolInput(input: Record<string, unknown>): string {
+  const command = input.command;
+  if (typeof command === "string") return command;
+  return JSON.stringify(input, null, 2);
 }
 
 function paint(text: string, color: string): string {
@@ -193,20 +283,51 @@ export type EventDividerOptions = {
   target?: string;
   durationMs?: number;
   timestamp?: Date;
+  contextPressure?: ContextPressure;
 };
 
 export function formatEventDivider(
   event: string,
-  { target, durationMs, timestamp }: EventDividerOptions = {},
+  { target, durationMs, timestamp, contextPressure }: EventDividerOptions = {},
   width = 72,
 ): string {
-  const label = [event, target, durationMs === undefined ? undefined : formatDuration(durationMs)]
+  const label = [
+    event,
+    target,
+    durationMs === undefined ? undefined : formatDuration(durationMs),
+    contextPressure === undefined ? undefined : formatContextUsage(contextPressure),
+  ]
     .filter((part) => part !== undefined)
     .join(" · ");
   const time = formatTimestamp(timestamp);
   const prefix = "──── ";
   const fill = "─".repeat(Math.max(4, width - prefix.length - label.length - time.length - 2));
   return `${prefix}${label} ${fill} ${time}`;
+}
+
+export function formatContextUsage(pressure: ContextPressure): string {
+  const used = formatTokensInK(pressure.usedTokens);
+  if (pressure.limitTokens === undefined) return `context ${used}`;
+
+  const ratio = pressure.ratio ?? pressure.usedTokens / pressure.limitTokens;
+  return `context ${used}/${formatTokensInK(pressure.limitTokens)} (${(ratio * 100).toFixed(1)}%)`;
+}
+
+export function formatModelUsage(usage: ModelUsage): string {
+  const parts = [
+    usage.inputTokens === undefined ? undefined : `in ${usage.inputTokens}`,
+    usage.outputTokens === undefined ? undefined : `out ${usage.outputTokens}`,
+    usage.totalTokens === undefined ? undefined : `total ${usage.totalTokens}`,
+    usage.cacheReadInputTokens === undefined ? undefined : `cache-read ${usage.cacheReadInputTokens}`,
+    usage.cacheCreationInputTokens === undefined ? undefined : `cache-create ${usage.cacheCreationInputTokens}`,
+    usage.reasoningOutputTokens === undefined ? undefined : `reasoning ${usage.reasoningOutputTokens}`,
+  ].filter((part) => part !== undefined);
+  return parts.join(" · ");
+}
+
+
+export function formatTokensInK(tokens: number): string {
+  return `${(tokens / 1000).toFixed(1).replace(/\.0$/, "")}k`;
 }
 
 export function formatTimestamp(timestamp = new Date()): string {

@@ -53,6 +53,40 @@ describe("CLI arguments", () => {
     expect(options.printPrompts).toBe(false);
   });
 
+  it("parses bot mode and forwards heartbeat config", () => {
+    const options = parseCliArgs(["--bot", "task"], {}, {
+      model: "gpt-test",
+      heartbeat: { intervalMs: 250 },
+      botPrompt: "keep going",
+    });
+
+    expect(options).toMatchObject({
+      bot: true,
+      prompt: "task",
+      heartbeatIntervalMs: 250,
+      botPrompt: "keep going",
+    });
+    expect(parseCliArgs(["task"], {}, { model: "gpt-test" }).bot).toBe(false);
+  });
+
+  it("parses list-sessions without requiring a model", () => {
+    const options = parseCliArgs(["--list-sessions"], {});
+
+    expect(options).toMatchObject({ listSessions: true, help: false });
+    expect(parseCliArgs(["-l"], {}).listSessions).toBe(true);
+  });
+
+  it("parses continue-last-session and rejects conflicting ids", () => {
+    const options = parseCliArgs(["--continue", "task"], {}, { model: "gpt-test" });
+    const shortOptions = parseCliArgs(["-c"], {}, { model: "gpt-test", sessionId: "config" });
+
+    expect(options).toMatchObject({ continueLastSession: true, sessionId: undefined, prompt: "task" });
+    expect(shortOptions).toMatchObject({ continueLastSession: true, sessionId: undefined });
+    expect(() => parseCliArgs(["--session-id", "work-1", "--continue"], {}, { model: "gpt-test" }))
+      .toThrow("--continue cannot be used with --session-id");
+  });
+
+
   it("uses config values when command-line options are omitted", () => {
     const options = parseCliArgs([], {}, {
       protocol: "anthropic",
@@ -82,6 +116,8 @@ describe("CLI arguments", () => {
     expect(parseCliArgs(["--help"]).help).toBe(true);
     expect(formatCliHelp()).toContain("myloop CLI");
     expect(formatCliHelp()).toContain("--no-print-prompts");
+    expect(formatCliHelp()).toContain("-c, --continue");
+    expect(formatCliHelp()).toContain("-l, --list-sessions");
   });
 
   it("rejects unknown arguments", () => {
