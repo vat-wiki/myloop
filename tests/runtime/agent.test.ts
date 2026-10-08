@@ -470,4 +470,49 @@ describe("Agent abort", () => {
     await agent.run("hello");
     expect(agent.messages).toHaveLength(2);
   });
+
+  it("records an error tool result when a tool rejects, keeping snapshots resumable", async () => {
+    let toolStarted!: () => void;
+    const toolStartedPromise = new Promise<void>((resolve) => {
+      toolStarted = resolve;
+    });
+    const modelClient = createModelClient(async (request) => {
+      if (request.messages.length === 1) {
+        return response([toolCallBlock("call-1", "fail-tool", { target: "boom" })], "tool_call");
+      }
+      return response([textBlock("recovered")]);
+    });
+    const agent = new AgentRuntime({
+      modelClient,
+      commandHosts: [{
+        id: "fail",
+        toolName: "fail-tool",
+        description: "always fails",
+        inputSchema: { type: "object" },
+        run: async (_input, { signal }) => {
+          toolStarted();
+          await new Promise((_resolve, reject) => {
+            if (signal?.aborted) {
+              reject(new Error("tool aborted"));
+              return;
+            }
+            signal?.addEventListener("abort", () => reject(new Error("tool aborted")), { once: true });
+          });
+          return "never";
+        },
+      }],
+    });
+
+    const running = agent.run("go");
+    await toolStartedPromise;
+    agent.abort("user interrupt");
+    await expect(running).rejects.toThrow("user interrupt");
+
+    expect(agent.messages).toHaveLength(3);
+    expect(agent.messages[2]?.content).toEqual([
+      toolResultBlock("call-1", "tool aborted", true),
+    ]);
+    expect(() => agent.snapshot()).not.toThrow();
+    expect(agent.snapshot().messages).toHaveLength(3);
+  });
 });

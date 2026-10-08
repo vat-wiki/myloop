@@ -49,6 +49,10 @@ export type ToolHandlers = Record<string, ToolHandler>;
 
 const MAX_OUTPUT_CONTINUATIONS = 8;
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const COMPACTION_SUMMARY_REQUEST =
   "请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。";
 
@@ -317,17 +321,21 @@ class AgentRuntime {
       for (const block of response.content) {
         if (block.type !== "tool_call") continue;
 
-        const handler = this.#resolveToolHandler(block.name);
-        if (!handler) {
-          toolResults.push(toolResultBlock(block.id, `未知工具: ${block.name}`, true));
-          continue;
-        }
+        try {
+          const handler = this.#resolveToolHandler(block.name);
+          if (!handler) {
+            toolResults.push(toolResultBlock(block.id, `未知工具: ${block.name}`, true));
+            continue;
+          }
 
-        signal.throwIfAborted();
-        this.#events.emit("tool_start", { id: block.id, name: block.name, input: block.arguments });
-        const output = await handler(block.arguments, { signal });
-        this.#events.emit("tool_end", { id: block.id, name: block.name, input: block.arguments, output });
-        toolResults.push(toolResultBlock(block.id, output));
+          signal.throwIfAborted();
+          this.#events.emit("tool_start", { id: block.id, name: block.name, input: block.arguments });
+          const output = await handler(block.arguments, { signal });
+          this.#events.emit("tool_end", { id: block.id, name: block.name, input: block.arguments, output });
+          toolResults.push(toolResultBlock(block.id, output));
+        } catch (error) {
+          toolResults.push(toolResultBlock(block.id, errorText(error), true));
+        }
       }
 
       const toolMessage = createToolMessage(toolResults);
