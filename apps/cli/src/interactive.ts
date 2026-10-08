@@ -5,12 +5,14 @@ export type InteractiveLoopOptions = {
   submit: (input: string) => Promise<void>;
   write: (text: string) => void;
   onIdle?: () => void;
+  onEscape?: () => void;
 };
 
 const EXIT_COMMANDS = new Set(["/exit", "/quit"]);
 
-export function createInteractiveLoop({ agent, submit, write, onIdle }: InteractiveLoopOptions): {
+export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }: InteractiveLoopOptions): {
   handleLine: (rawLine: string) => void;
+  handleEscape: () => void;
   interrupt: () => void;
   isStopped: () => boolean;
   drain: () => Promise<void>;
@@ -34,7 +36,7 @@ export function createInteractiveLoop({ agent, submit, write, onIdle }: Interact
           return;
         }
         if (input === "/help") {
-          write("Commands: /exit · Ctrl+C interrupts, second Ctrl+C exits\n");
+          write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
           continue;
         }
         if (agent.running) {
@@ -56,6 +58,15 @@ export function createInteractiveLoop({ agent, submit, write, onIdle }: Interact
     handleLine(rawLine: string): void {
       queue.push(rawLine);
       void drain();
+    },
+    handleEscape(): void {
+      if (!agent.running) {
+        return;
+      }
+      agent.abort(new Error("interrupted"));
+      queue.length = 0;
+      write("interrupted — queued input discarded\n");
+      onEscape?.();
     },
     interrupt(): void {
       if (agent.running) {

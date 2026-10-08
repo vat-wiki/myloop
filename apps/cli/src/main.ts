@@ -200,7 +200,7 @@ export async function runBotLoop({
     const input = String(line).trim();
     if (input === "/exit" || input === "/quit") botStopped = true;
     else if (input === "/help") {
-      process.stderr.write("Commands: /exit · Ctrl+C interrupts, second Ctrl+C exits\n");
+      process.stderr.write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
     } else if (input) await submit(input);
     if (botStopped) break;
     readline.prompt();
@@ -349,10 +349,20 @@ async function runInteractive({
   }
 
   readline.prompt();
+  const wasRaw = process.stdin.isRaw ?? false;
+  process.stdin.setRawMode?.(true);
+  const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }): void => {
+    if (key?.name === "escape" && !key.ctrl) {
+      loop.handleEscape();
+    }
+  };
+  process.stdin.on("keypress", onKeypress);
   for await (const line of readline) {
     loop.handleLine(String(line));
     if (loop.isStopped()) break;
   }
+  process.stdin.setRawMode?.(wasRaw);
+  process.stdin.off("keypress", onKeypress);
 
   return 0;
 }

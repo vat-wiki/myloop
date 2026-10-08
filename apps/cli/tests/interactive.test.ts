@@ -42,7 +42,7 @@ describe("interactive loop", () => {
     await loop.drain();
 
     expect(submit).not.toHaveBeenCalled();
-    expect(output).toContainEqual("Commands: /exit · Ctrl+C interrupts, second Ctrl+C exits\n");
+    expect(output).toContainEqual("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
     expect(loop.isStopped()).toBe(true);
   });
 
@@ -79,5 +79,27 @@ describe("interactive loop", () => {
     const loop = createLoop(createAgent());
     loop.interrupt();
     expect(loop.isStopped()).toBe(true);
+  });
+
+  it("aborts a running agent on escape and discards queued input", () => {
+    const agent = createAgent({ running: true });
+    const onEscape = vi.fn();
+    const loop = createInteractiveLoop({ agent, submit, write: (t) => output.push(t), onEscape });
+    loop.handleLine("queued task");
+
+    loop.handleEscape();
+    expect(agent.abort).toHaveBeenCalledTimes(1);
+    expect(output).toContainEqual("interrupted — queued input discarded\n");
+    expect(onEscape).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards queued input on escape without aborting an idle agent", () => {
+    const agent = createAgent();
+    const loop = createInteractiveLoop({ agent, submit, write: (t) => output.push(t) });
+    loop.handleLine("queued task");
+
+    loop.handleEscape();
+    expect(agent.abort).not.toHaveBeenCalled();
+    expect(output).toEqual([]);
   });
 });
