@@ -73,17 +73,20 @@ export function composeCliSystem({
   systemPrompt = "",
   agentsInstructions = "",
   skills = [],
+  memorySection = "",
 }: {
   systemPrompt?: string;
   agentsInstructions?: string;
   skills?: ReadonlyArray<LoadedSkill>;
+  memorySection?: string;
 } = {}): string {
-  return composeSystem({
+  const base = composeSystem({
     basePrompt: cliBasePrompt,
     instructions: systemPrompt,
     agentsInstructions,
     skills,
   });
+  return [base, memorySection].filter((s) => s.trim().length > 0).join("\n\n");
 }
 
 export { loadAgentsInstructions };

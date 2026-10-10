@@ -4,8 +4,10 @@ import {
   respondUnreadDrive,
   selfCheckDrive,
   selfMaintenanceDrive,
+  memoryGardeningDrive,
   type Drive,
 } from "./drives.js";
+import type { MemorySenses } from "../memory/memory.js";
 import { runTask } from "../run.js";
 
 /** CLI bot 的世界：arbiter 每次心跳会向宿主要一份这样的快照 */
@@ -16,6 +18,9 @@ export type CliWorld = {
   oldestUnreadAt?: number;
   lastActionAt?: number;
   failedHealthChecks: number;
+  inboxLines: number;
+  brokenLinkCount: number;
+  stalestDays: number | null;
 };
 
 export type BotHostOptions = {
@@ -27,6 +32,8 @@ export type BotHostOptions = {
   /** act 成功后由宿主回写，供 self-maintenance 计算空闲 */
   markAction?: (at: number) => void;
   probes?: Array<() => boolean>;
+  /** 记忆 wiki 健康信号（可选：宿主没配记忆时不产生记忆驱力压力） */
+  memorySenses?: () => MemorySenses;
   drives?: ReadonlyArray<Drive<CliWorld>>;
   now?: () => number;
 };
@@ -47,6 +54,7 @@ export function createBotHost(options: BotHostOptions): {
     respondUnreadDrive<CliWorld>(),
     selfCheckDrive<CliWorld>(),
     selfMaintenanceDrive<CliWorld>(),
+    memoryGardeningDrive<CliWorld>(),
   ];
 
   let lastActionAt: number | undefined;
@@ -56,6 +64,7 @@ export function createBotHost(options: BotHostOptions): {
 
     evaluate: (tick): CliWorld => {
       const pending = options.unread();
+      const memory = options.memorySenses?.();
       return {
         now: now(),
         tick,
@@ -63,6 +72,9 @@ export function createBotHost(options: BotHostOptions): {
         oldestUnreadAt: pending[0]?.at,
         lastActionAt: lastActionAt,
         failedHealthChecks: probes.filter((probe) => !probe()).length,
+        inboxLines: memory?.inboxLines ?? 0,
+        brokenLinkCount: memory?.brokenLinkCount ?? 0,
+        stalestDays: memory?.stalestDays ?? null,
       };
     },
 

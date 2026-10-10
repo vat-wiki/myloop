@@ -18,6 +18,7 @@ import {
 import { createCliSessionId, FileSessionStore } from "./session.js";
 import { createBotHost } from "./bot/host.js";
 import { DriveArbiter } from "./bot/arbiter.js";
+import { Memory, renderMemorySection } from "./memory/memory.js";
 
 export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)): Promise<number> {
   let options: CliOptions;
@@ -68,6 +69,8 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
         ? loadAppSkills({ cwd: process.cwd(), home: process.env.HOME })
         : Promise.resolve([]),
     ]);
+    const memory = new Memory({ cwd: process.cwd(), home: process.env.HOME });
+    memory.ensureScaffold();
     const sessionStore = new FileSessionStore({ cwd: process.cwd() });
     const { agent } = await createAppAgent({
       name: "cli-agent",
@@ -83,12 +86,23 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
         intervalMs: options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
         mode: "always",
       },
-      system: composeCliSystem({ systemPrompt, agentsInstructions, skills }),
+      system: composeCliSystem({
+        systemPrompt,
+        agentsInstructions,
+        skills,
+        memorySection: options.bot ? renderMemorySection({ dir: memory.dir, index: memory.readIndex() }) : "",
+      }),
       logger: options.log,
       sessionId: options.sessionId ?? createCliSessionId(),
       sessionStore,
       cwd: process.cwd(),
     });
+    if (options.bot) {
+      // 压缩摘要不丢：进记忆 inbox，由 memory-gardening 驱力消化成 wiki 条目
+      agent.on("context_compacted", (event) => {
+        if (event.summary.trim()) memory.appendInbox(event.summary);
+      });
+    }
     if (options.sessionId) {
       const loaded = await agent.loadSession();
       if (!loaded) throw new Error(`session not found: ${options.sessionId}`);
@@ -167,11 +181,14 @@ export async function runBotLoop({
     if (!agent.running) readline.prompt();
   };
   const pendingUnread: Array<{ text: string; at: number }> = [];
+  const memory = new Memory({ cwd: process.cwd(), home: process.env.HOME });
+  memory.ensureScaffold();
   const host = createBotHost({
     agent,
     color,
     width,
     unread: () => pendingUnread,
+    memorySenses: () => memory.senses(),
   });
   const arbiter = new DriveArbiter<CliWorldShape>({ drives: [...host.drives], onSkip: (reason) => {
     if (reason !== "no-drive-above-threshold") {
