@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { createHeartbeatDriver } from "../src/main.js";
+import { createBotHost, type CliWorld } from "../src/bot/host.js";
 import type { SingleAgent } from "myloop/agent";
+import type { DriveArbiterDeps } from "../src/bot/arbiter.js";
 
 type HeartbeatEvent = { tick: number; at: number; running: boolean };
 
 function createBotAgent(running = false): {
   agent: SingleAgent;
   listeners: Map<string, Array<(event: never) => void>>;
+  runs: Array<string>;
 } {
   const listeners = new Map<string, Array<(event: never) => void>>();
+  const runs: Array<string> = [];
   const agent = {
     on(type: string, listener: (event: never) => void): () => void {
       const queue = listeners.get(type) ?? [];
@@ -23,11 +26,23 @@ function createBotAgent(running = false): {
     get running(): boolean {
       return running;
     },
+    abort(): void {},
+    reset(): void {},
+    system: "test",
+    tools: [],
+    run(input: string): Promise<{ answer: string; response: { stopReason: "end" } }> {
+      runs.push(input);
+      return Promise.resolve({ answer: "ok", response: { stopReason: "end" } });
+    },
     saveSession(): Promise<void> {
       return Promise.resolve();
     },
   };
-  return { agent: agent as unknown as SingleAgent, listeners };
+  return {
+    agent: agent as unknown as SingleAgent,
+    listeners,
+    runs,
+  };
 }
 
 function emitHeartbeat(
@@ -43,93 +58,75 @@ async function settle(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-describe("createHeartbeatDriver", () => {
-  it("runs a heartbeat task per idle tick and serializes overlapping ticks", async () => {
+describe("createBotHost", () => {
+  it("builds a world snapshot from unread queue and probes", () => {
     const harness = createBotAgent();
-    let release: (() => void) | undefined;
-    const runs: Array<string> = [];
-    const agent = harness.agent as unknown as {
-      run(input: string): Promise<{ answer: string }>;
-    };
-    agent.run = (input: string) => {
-      runs.push(input);
-      return new Promise<{ answer: string }>((resolve) => {
-        release = () => resolve({ answer: "ok" });
-      });
-    };
-
-    const driver = createHeartbeatDriver({
+    const pending = [{ text: "hello", at: 1_000 }];
+    const { deps } = createBotHost({
       agent: harness.agent,
-      botPrompt: "keep going",
       color: false,
+      unread: () => pending,
+      probes: [() => true, () => false],
+      now: () => 5_000,
     });
 
-    emitHeartbeat(harness.listeners, { tick: 1, at: Date.now(), running: false });
-    await settle();
-    expect(runs).toHaveLength(1);
-    expect(runs[0]).toContain("heartbeat #1");
-    expect(runs[0]).toContain("keep going");
-
-    emitHeartbeat(harness.listeners, { tick: 2, at: Date.now(), running: false });
-    await settle();
-    expect(runs).toHaveLength(1);
-
-    release?.();
-    await settle();
-
-    emitHeartbeat(harness.listeners, { tick: 3, at: Date.now(), running: false });
-    await settle();
-    expect(runs).toHaveLength(2);
-    expect(runs[1]).toContain("heartbeat #3");
+    const world = deps.evaluate(3) as CliWorld;
+    expect(world).toMatchObject({
+      now: 5_000,
+      tick: 3,
+      unreadCount: 1,
+      oldestUnreadAt: 1_000,
+      failedHealthChecks: 1,
+    });
   });
 
-  it("skips ticks while the agent is busy and calls onDone after each task", async () => {
-    const harness = createBotAgent(true);
-    const runs: Array<string> = [];
-    const done: Array<number> = [];
-    const agent = harness.agent as unknown as {
-      run(input: string): Promise<{ answer: string }>;
-    };
-    agent.run = (input: string) => {
-      runs.push(input);
-      return Promise.resolve({ answer: "ok" });
-    };
-
-    const driver = createHeartbeatDriver({
+  it("act runs the prompt through the agent and records the action time", async () => {
+    const harness = createBotAgent();
+    let markedAt: number | undefined;
+    const { deps } = createBotHost({
       agent: harness.agent,
-      botPrompt: "check",
       color: false,
-      onDone: () => done.push(runs.length),
+      unread: () => [],
+      markAction: (at) => {
+        markedAt = at;
+      },
+      now: () => 42_000,
     });
 
-    emitHeartbeat(harness.listeners, { tick: 1, at: Date.now(), running: false });
-    await settle();
-    expect(runs).toHaveLength(0);
-    expect(done).toHaveLength(0);
-
-    driver();
+    await deps.act({ drive: { name: "respond-unread", threshold: 0.5, cooldownMs: 0, evaluate: () => null }, outcome: { pressure: 1, prompt: "go" } });
+    expect(harness.runs).toEqual(["[respond-unread] go"]);
+    expect(markedAt).toBe(42_000);
   });
 
-  it("does not fire again after the returned unsubscribe", async () => {
+  it("wires agent heartbeat to arbiter ticks (host-driven loop)", async () => {
     const harness = createBotAgent();
-    const runs: Array<string> = [];
-    const agent = harness.agent as unknown as {
-      run(input: string): Promise<{ answer: string }>;
-    };
-    agent.run = (input: string) => {
-      runs.push(input);
-      return Promise.resolve({ answer: "ok" });
-    };
-
-    const driver = createHeartbeatDriver({
+    let markedAt: number | undefined;
+    const { deps, drives } = createBotHost({
       agent: harness.agent,
-      botPrompt: "check",
       color: false,
+      unread: () => [],
+      markAction: (at) => {
+        markedAt = at;
+      },
+      now: () => 1_000,
+      drives: [{
+        name: "always",
+        threshold: 0.5,
+        cooldownMs: 0,
+        evaluate: () => ({ pressure: 1, prompt: "tick work" }),
+      }],
     });
-    driver();
+    const arbiter = new (await import("../src/bot/arbiter.js")).DriveArbiter<CliWorld>({
+      drives,
+    });
+    const off = harness.agent.on("heartbeat", (event) => {
+      void arbiter.tick((event as unknown as HeartbeatEvent).tick, deps as DriveArbiterDeps<CliWorld>);
+    });
 
     emitHeartbeat(harness.listeners, { tick: 1, at: Date.now(), running: false });
     await settle();
-    expect(runs).toHaveLength(0);
+    expect(harness.runs).toEqual(["[always] tick work"]);
+    expect(markedAt).toBeDefined();
+    off();
   });
 });

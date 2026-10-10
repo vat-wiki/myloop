@@ -16,6 +16,8 @@ import {
   errorText,
 } from "./run.js";
 import { createCliSessionId, FileSessionStore } from "./session.js";
+import { createBotHost } from "./bot/host.js";
+import { DriveArbiter } from "./bot/arbiter.js";
 
 export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)): Promise<number> {
   let options: CliOptions;
@@ -118,7 +120,6 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
     if (options.bot) {
       return await runBotLoop({
         agent,
-        botPrompt: options.botPrompt,
         heartbeatIntervalMs: options.heartbeatIntervalMs,
         color: isColorEnabled(process.env, process.stderr),
         width: process.stderr.columns,
@@ -145,38 +146,51 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
   }
 }
 
-const BOT_PROMPT = "Heartbeat: check in briefly and keep working on what remains.";
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
+
+type CliWorldShape = import("./bot/host.js").CliWorld;
 
 export async function runBotLoop({
   agent,
-  botPrompt,
   heartbeatIntervalMs,
   color,
   width,
 }: {
   agent: SingleAgent;
-  botPrompt?: string;
   heartbeatIntervalMs?: number;
   color: boolean;
   width?: number;
 }): Promise<number> {
-  const runningBotPrompt = botPrompt ?? BOT_PROMPT;
   let botStopped = false;
 
   const redraw = (): void => {
     if (!agent.running) readline.prompt();
   };
-  const offHeartbeat = createHeartbeatDriver({
+  const pendingUnread: Array<{ text: string; at: number }> = [];
+  const host = createBotHost({
     agent,
-    botPrompt: runningBotPrompt,
     color,
     width,
-    onDone: redraw,
+    unread: () => pendingUnread,
+  });
+  const arbiter = new DriveArbiter<CliWorldShape>({ drives: [...host.drives], onSkip: (reason) => {
+    if (reason !== "no-drive-above-threshold") {
+      process.stderr.write(`  (tick skipped: ${reason})\n`);
+    }
+  } });
+  const offHeartbeat = agent.on("heartbeat", (event) => {
+    if (event.running || agent.running) return;
+    void arbiter
+      .tick(event.tick, host.deps)
+      .then((selection) => {
+        // respond-unread 行动成功 = 未读已回复，清空积压
+        if (selection?.drive.name === "respond-unread") pendingUnread.length = 0;
+      })
+      .then(redraw);
   });
   agent.startHeartbeat();
   process.stderr.write(
-    `bot mode started (heartbeat interval: ${heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS}ms)\n`,
+    `bot mode started (heartbeat interval: ${heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS}ms, drives: ${host.drives.map((d) => d.name).join(", ")})\n`,
   );
 
   const readline = createInterface({
@@ -210,7 +224,14 @@ export async function runBotLoop({
     if (input === "/exit" || input === "/quit") botStopped = true;
     else if (input === "/help") {
       process.stderr.write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
-    } else if (input) await submit(input);
+    } else if (input) {
+      if (agent.running) {
+        pendingUnread.push({ text: input, at: Date.now() });
+        process.stderr.write("(agent busy — queued as unread)\n");
+      } else {
+        await submit(input);
+      }
+    }
     if (botStopped) break;
     readline.prompt();
   }
@@ -224,43 +245,6 @@ export async function runBotLoop({
   if (agent.running) agent.abort(new Error("bot stopped"));
   process.stderr.write("\nbot mode stopped\n");
   return 0;
-}
-
-export function createHeartbeatDriver({
-  agent,
-  botPrompt,
-  color,
-  width,
-  onDone,
-}: {
-  agent: SingleAgent;
-  botPrompt: string;
-  color: boolean;
-  width?: number;
-  onDone?: () => void;
-}): () => void {
-  let pending = false;
-  return agent.on("heartbeat", (event) => {
-    if (event.running || pending || agent.running) return;
-    pending = true;
-    const currentTick = event.tick;
-    process.stderr.write(`\n♥ tick ${currentTick}\n`);
-    runTask({
-      agent,
-      input: `[heartbeat #${currentTick}] ${botPrompt}`,
-      saveSession: () => agent.saveSession(),
-      output: process.stdout,
-      status: (message) => process.stderr.write(`${message}\n`),
-      trace: (text) => process.stderr.write(text),
-      color,
-      width,
-    })
-      .catch(() => {})
-      .finally(() => {
-        pending = false;
-        onDone?.();
-      });
-  });
 }
 
 function createBotSubmit({

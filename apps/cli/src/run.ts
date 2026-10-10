@@ -211,6 +211,7 @@ export async function runTask({
     removeCompacted();
     removeTextDelta();
     removeAssistantMessage();
+    removeModelResponse();
     if (receivedModelResponse) {
       try {
         await saveSession();
