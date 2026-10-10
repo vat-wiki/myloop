@@ -266,7 +266,64 @@ describe("CLI task runner", () => {
     expect(statusMessages.join("\n")).toContain("\x1b[32m");
   });
 
-  it("shows actual model usage returned by the client", async () => {
+  it("streams context compaction progress and shows the compacted history", async () => {
+    const statusMessages: Array<string> = [];
+    const traceText: Array<string> = [];
+    const output = createFakeOutput();
+    const listeners = new Map<string, (event?: unknown) => void>();
+    const emit = (event: string, eventPayload?: unknown): void => {
+      listeners.get(event)?.(eventPayload);
+    };
+
+    await runTask({
+      agent: {
+        on(event, listener) {
+          listeners.set(event, listener as (event?: unknown) => void);
+          return () => {};
+        },
+        abort() {},
+        reset() {},
+        run: async () => {
+          emit("context_pressure", {
+            pressure: { usedTokens: 90_000, limitTokens: 100_000, ratio: 0.9 },
+          });
+          emit("context_compaction_start", {
+            reason: "automatic",
+            pressure: { usedTokens: 90_000, limitTokens: 100_000, ratio: 0.9 },
+            messageCount: 12,
+          });
+          emit("context_compaction_thinking_delta", { delta: "checking" });
+          emit("context_compaction_summary_delta", { delta: "task summary" });
+          emit("context_compacted", {
+            reason: "automatic",
+            pressure: { usedTokens: 90_000, limitTokens: 100_000, ratio: 0.9 },
+            beforeMessageCount: 12,
+            afterMessageCount: 1,
+            droppedMessageCount: 12,
+            durationMs: 1_234,
+            summary: "task summary",
+            usage: { inputTokens: 1_000, outputTokens: 20, totalTokens: 1_020 },
+          });
+          return { answer: "done", response: { stopReason: "end" } };
+        },
+      },
+      input: "run tests",
+      saveSession: async () => {},
+      output: output.stream,
+      status: (message) => statusMessages.push(message),
+      trace: (text) => traceText.push(text),
+    });
+
+    const log = statusMessages.join("\n");
+    expect(log).toMatch(/──── context\.compaction\.start · automatic · context 90k\/100k \(90\.0%\) ─+/);
+    expect(log).toContain("正在压缩 12 条历史消息");
+    expect(log).toMatch(/──── context\.compacted · automatic · 1\.2s · context 90k\/100k \(90\.0%\) ─+/);
+    expect(log).toContain("messages 12 → 1 · in 1k · out 20 · total 1k");
+    expect(traceText.join("")).toContain("checking");
+    expect(traceText.join("")).toContain("task summary");
+  });
+
+  it("shows aggregated model usage returned by the client", async () => {
     const statusMessages: Array<string> = [];
     const output = createFakeOutput();
     const listeners = new Map<string, (event?: unknown) => void>();
@@ -284,8 +341,11 @@ describe("CLI task runner", () => {
         reset() {},
         run: async () => {
           emit("text_delta", { delta: "done" });
-          emit("model_response", {
+          emit("model_response");
+          return {
+            answer: "done",
             response: {
+              stopReason: "end",
               usage: {
                 inputTokens: 1_234,
                 outputTokens: 56,
@@ -294,8 +354,7 @@ describe("CLI task runner", () => {
                 reasoningOutputTokens: 9,
               },
             },
-          });
-          return { answer: "done", response: { stopReason: "end" } };
+          };
         },
       },
       input: "run tests",
@@ -305,9 +364,52 @@ describe("CLI task runner", () => {
       trace: () => {},
     });
 
-    expect(statusMessages.join("\n")).toMatch(/──── model\.usage · in 1234 · out 56 · total 1290/);
+    expect(statusMessages.join("\n")).toMatch(/──── model\.usage · in 1\.2k · out 56 · total 1\.3k/);
     expect(statusMessages.join("\n")).toContain("cache-read 78");
     expect(statusMessages.join("\n")).toContain("reasoning 9");
+  });
+
+  it("labels model usage with the call count after multiple calls", async () => {
+    const statusMessages: Array<string> = [];
+    const output = createFakeOutput();
+    const listeners = new Map<string, (event?: unknown) => void>();
+    const emit = (event: string, eventPayload?: unknown): void => {
+      listeners.get(event)?.(eventPayload);
+    };
+
+    await runTask({
+      agent: {
+        on(event, listener) {
+          listeners.set(event, listener as (event?: unknown) => void);
+          return () => {};
+        },
+        abort() {},
+        reset() {},
+        run: async () => {
+          emit("text_delta", { delta: "done" });
+          emit("model_response");
+          emit("model_response");
+          return {
+            answer: "done",
+            response: {
+              stopReason: "end",
+              usage: {
+                inputTokens: 1_234,
+                outputTokens: 56,
+                totalTokens: 1_290,
+              },
+            },
+          };
+        },
+      },
+      input: "run tests",
+      saveSession: async () => {},
+      output: output.stream,
+      status: (message) => statusMessages.push(message),
+      trace: () => {},
+    });
+
+    expect(statusMessages.join("\n")).toMatch(/──── model\.usage · 2 calls · in 1\.2k · out 56 · total 1\.3k/);
   });
 
   it("warns when a partial answer is truncated by max_tokens", async () => {
@@ -362,7 +464,7 @@ describe("CLI task runner", () => {
     expect(formatContextUsage({ usedTokens: 1_500, limitTokens: 200_000, ratio: 0.0075 })).toBe(
       "context 1.5k/200k (0.8%)",
     );
-    expect(formatContextUsage({ usedTokens: 500 })).toBe("context 0.5k");
+    expect(formatContextUsage({ usedTokens: 500 })).toBe("context 500");
     expect(formatTokensInK(200_000)).toBe("200k");
   });
 
@@ -374,7 +476,12 @@ describe("CLI task runner", () => {
       cacheReadInputTokens: 78,
       cacheCreationInputTokens: 12,
       reasoningOutputTokens: 9,
-    })).toBe("in 1234 · out 56 · total 1290 · cache-read 78 · cache-create 12 · reasoning 9");
+    })).toBe("in 1.2k · out 56 · total 1.3k · cache-read 78 · cache-create 12 · reasoning 9");
     expect(formatModelUsage({})).toBe("");
+  });
+
+  it("keeps small token counts unscaled", () => {
+    expect(formatTokensInK(999)).toBe("999");
+    expect(formatTokensInK(1_000)).toBe("1k");
   });
 });

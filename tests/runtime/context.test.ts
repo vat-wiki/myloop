@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   estimateMessagesTokens,
+  estimateTextTokens,
   measureContextPressure,
 } from "../../src/runtime/context.js";
 import {
@@ -53,5 +54,10 @@ describe("estimateMessagesTokens", () => {
   it("estimates four characters per token", () => {
     const messages = [createUserMessage([textBlock("x".repeat(100))])];
     expect(estimateMessagesTokens(messages)).toBe(Math.ceil(JSON.stringify(messages).length / 4));
+  });
+
+  it("counts CJK characters conservatively instead of dividing by four", () => {
+    expect(estimateTextTokens("测试中文")).toBe(4);
+    expect(estimateTextTokens("hello")).toBe(2);
   });
 });

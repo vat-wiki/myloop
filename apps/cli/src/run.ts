@@ -9,13 +9,26 @@ export type RunTaskOptions = {
     on(event: "thinking_delta", listener: (event: { delta: string }) => void): () => void;
     on(event: "text_delta", listener: (event: { delta: string }) => void): () => void;
     on(event: "context_pressure", listener: (event: { pressure: ContextPressure }) => void): () => void;
+    on(event: "context_compaction_start", listener: (event: { reason: string; pressure?: ContextPressure; messageCount: number }) => void): () => void;
+    on(event: "context_compaction_thinking_delta", listener: (event: { delta: string }) => void): () => void;
+    on(event: "context_compaction_summary_delta", listener: (event: { delta: string }) => void): () => void;
+    on(event: "context_compacted", listener: (event: {
+      reason: string;
+      pressure?: ContextPressure;
+      beforeMessageCount: number;
+      afterMessageCount: number;
+      droppedMessageCount: number;
+      durationMs: number;
+      summary: string;
+      usage?: ModelUsage;
+    }) => void): () => void;
     on(event: "assistant_message", listener: () => void): () => void;
     on(event: "model_response", listener: (event: { response: { usage?: ModelUsage } }) => void): () => void;
     abort(reason?: unknown): void;
     reset(): void;
     run(input: string): Promise<{
       answer: string;
-      response: { stopReason: "end" | "tool_call" | "max_tokens" };
+      response: { stopReason: "end" | "tool_call" | "max_tokens"; usage?: ModelUsage };
     }>;
   };
   input: string;
@@ -51,12 +64,13 @@ export async function runTask({
   printPrompts = false,
 }: RunTaskOptions): Promise<number> {
   const startedAt = Date.now();
-  let stream: "thinking" | "text" | undefined;
+  let stream: "thinking" | "text" | "compaction_thinking" | "compaction_summary" | undefined;
   let currentColor = "";
   let answerStreamed = false;
   const activeTools = new Map<string, { name: string; startedAt: number }>();
   let lastTool: { name: string; startedAt: number } | undefined;
   let receivedModelResponse = false;
+  let modelCallCount = 0;
 
   const paintIfEnabled = (text: string, color: string): string => {
     return colorEnabled ? paint(text, color) : text;
@@ -72,12 +86,12 @@ export async function runTask({
 
   if (printPrompts) printAgentPrompts({ agent, status, trace, color: colorEnabled, width });
 
-  const appendStream = (next: "thinking" | "text", delta: string): void => {
+  const appendStream = (next: typeof stream, delta: string): void => {
     if (!delta) return;
     if (stream !== next) {
       if (stream !== undefined) trace("\n");
-      currentColor = next === "thinking" ? COLORS.magenta : COLORS.blue;
-      event(next === "thinking" ? "thinking" : "assistant");
+      currentColor = next === "thinking" || next === "compaction_thinking" ? COLORS.magenta : COLORS.blue;
+      event(next === "thinking" ? "thinking" : next === "text" ? "assistant" : next === "compaction_thinking" ? "context.compaction.thinking" : "context.compaction.summary");
       stream = next;
       if (next === "text") answerStreamed = true;
     }
@@ -120,6 +134,36 @@ export async function runTask({
   const removeContextPressure = agent.on("context_pressure", ({ pressure }) => {
     event("context.estimate", { contextPressure: pressure });
   });
+  let compactionSummaryStreamed = false;
+  const removeCompactionStart = agent.on("context_compaction_start", ({ reason, pressure, messageCount }) => {
+    endStream();
+    compactionSummaryStreamed = false;
+    event("context.compaction.start", { target: reason, contextPressure: pressure });
+    status(paintIfEnabled(`  正在压缩 ${messageCount} 条历史消息，生成摘要...`, COLORS.dim));
+  });
+  const removeCompactionThinkingDelta = agent.on("context_compaction_thinking_delta", ({ delta }) => {
+    appendStream("compaction_thinking", delta);
+  });
+  const removeCompactionSummaryDelta = agent.on("context_compaction_summary_delta", ({ delta }) => {
+    compactionSummaryStreamed = true;
+    appendStream("compaction_summary", delta);
+  });
+  const removeCompacted = agent.on("context_compacted", (eventPayload) => {
+    endStream();
+    event("context.compacted", {
+      target: eventPayload.reason,
+      durationMs: eventPayload.durationMs,
+      contextPressure: eventPayload.pressure,
+    }, COLORS.green);
+    if (!compactionSummaryStreamed && eventPayload.summary) {
+      status(paintIfEnabled(formatToolOutput(eventPayload.summary), COLORS.blue));
+    }
+    status(paintIfEnabled(
+      `  messages ${eventPayload.beforeMessageCount} → ${eventPayload.afterMessageCount}` +
+        (eventPayload.usage ? ` · ${formatModelUsage(eventPayload.usage)}` : ""),
+      COLORS.dim,
+    ));
+  });
   const removeTextDelta = agent.on("text_delta", ({ delta }) => {
     appendStream("text", delta);
   });
@@ -127,16 +171,18 @@ export async function runTask({
     endStream();
   });
   const removeModelResponse = agent.on("model_response", (payload = { response: {} }) => {
-    const response = payload.response;
     receivedModelResponse = true;
-    if (!response.usage) return;
-    endStream();
-    event("model.usage", { target: formatModelUsage(response.usage) });
+    modelCallCount += 1;
   });
 
   try {
     const result = await agent.run(input);
     endStream();
+    if (result.response.usage) {
+      event("model.usage", {
+        target: (modelCallCount > 1 ? `${modelCallCount} calls · ` : "") + formatModelUsage(result.response.usage),
+      });
+    }
     if (result.response.stopReason === "max_tokens") {
       status(paintIfEnabled("⚠ model output truncated at max_tokens", COLORS.yellow));
     }
@@ -159,6 +205,10 @@ export async function runTask({
     removeToolEnd();
     removeThinkingDelta();
     removeContextPressure();
+    removeCompactionStart();
+    removeCompactionThinkingDelta();
+    removeCompactionSummaryDelta();
+    removeCompacted();
     removeTextDelta();
     removeAssistantMessage();
     if (receivedModelResponse) {
@@ -315,18 +365,19 @@ export function formatContextUsage(pressure: ContextPressure): string {
 
 export function formatModelUsage(usage: ModelUsage): string {
   const parts = [
-    usage.inputTokens === undefined ? undefined : `in ${usage.inputTokens}`,
-    usage.outputTokens === undefined ? undefined : `out ${usage.outputTokens}`,
-    usage.totalTokens === undefined ? undefined : `total ${usage.totalTokens}`,
-    usage.cacheReadInputTokens === undefined ? undefined : `cache-read ${usage.cacheReadInputTokens}`,
-    usage.cacheCreationInputTokens === undefined ? undefined : `cache-create ${usage.cacheCreationInputTokens}`,
-    usage.reasoningOutputTokens === undefined ? undefined : `reasoning ${usage.reasoningOutputTokens}`,
+    usage.inputTokens === undefined ? undefined : `in ${formatTokensInK(usage.inputTokens)}`,
+    usage.outputTokens === undefined ? undefined : `out ${formatTokensInK(usage.outputTokens)}`,
+    usage.totalTokens === undefined ? undefined : `total ${formatTokensInK(usage.totalTokens)}`,
+    usage.cacheReadInputTokens === undefined ? undefined : `cache-read ${formatTokensInK(usage.cacheReadInputTokens)}`,
+    usage.cacheCreationInputTokens === undefined ? undefined : `cache-create ${formatTokensInK(usage.cacheCreationInputTokens)}`,
+    usage.reasoningOutputTokens === undefined ? undefined : `reasoning ${formatTokensInK(usage.reasoningOutputTokens)}`,
   ].filter((part) => part !== undefined);
   return parts.join(" · ");
 }
 
 
 export function formatTokensInK(tokens: number): string {
+  if (tokens < 1_000) return `${tokens}`;
   return `${(tokens / 1000).toFixed(1).replace(/\.0$/, "")}k`;
 }
 

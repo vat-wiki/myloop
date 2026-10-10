@@ -57,6 +57,8 @@ function errorText(error: unknown): string {
 const COMPACTION_SUMMARY_REQUEST =
   "请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。";
 
+const COMPACTION_FALLBACK_PREFIX = "[Context truncated]";
+
 export type AgentRuntimeOptions = {
   modelClient: ModelClient;
   system?: string;
@@ -233,7 +235,7 @@ class AgentRuntime {
       this.messages.push(message);
       this.#events.emit("message", { message });
       this.#events.emit("user_message", { message });
-      const response = await this.#runStep(controller.signal);
+      const response = await this.#runStep(controller.signal, runtimeInput);
       this.#events.emit("end", { response });
       return response;
     } catch (error) {
@@ -246,9 +248,10 @@ class AgentRuntime {
     }
   }
 
-  #runStep = async (signal: AbortSignal): Promise<ModelResponse> => {
+  #runStep = async (signal: AbortSignal, input: ReadonlyArray<UserContentBlock>): Promise<ModelResponse> => {
     let combinedResponse: ModelResponse | undefined;
     let outputContinuations = 0;
+    let pendingInput: ReadonlyArray<UserContentBlock> | undefined = input;
 
     while (true) {
       const pressure = this.#measureContextPressure({
@@ -258,10 +261,41 @@ class AgentRuntime {
       });
       this.#events.emit("context_pressure", { pressure });
       if (pressure.needsCompaction) {
-        await this.#compactMessages({
-          reason: "automatic",
-          signal,
-        });
+        try {
+          await this.#compactMessages({
+            reason: "automatic",
+            signal,
+            remainingInput: pendingInput,
+          });
+        } catch (error) {
+          // 摘要请求失败（上下文越满越容易过载）时退化为截断：丢弃旧历史，
+          // 只保留最后一条 user 消息的文本重组为干净消息，保住当前回合；
+          // 只剩一条时无历史可截，原样抛出。
+          if (this.messages.length <= 1) {
+            throw error;
+          }
+          const lastUser = [...this.messages].reverse().find((message) => message.role === "user");
+          const lastUserText = lastUser
+            ? lastUser.content.flatMap((block) => block.type === "text" ? [block.text] : []).join("\n")
+            : "";
+          const dropped = this.messages.length - 1;
+          this.messages = lastUserText
+            ? [createUserMessage(lastUserText)]
+            : [createUserMessage(COMPACTION_FALLBACK_PREFIX)];
+          this.#events.emit("error", { error });
+          this.#events.emit("context_compacted", {
+            before: [],
+            after: [...this.messages],
+            reason: "automatic",
+            pressure,
+            beforeMessageCount: dropped + 1,
+            afterMessageCount: 1,
+            droppedMessageCount: dropped,
+            durationMs: 0,
+            summary: `${COMPACTION_FALLBACK_PREFIX} ${errorText(error)}`,
+          });
+        }
+        pendingInput = undefined;
       }
 
       const request = await this.#applyBeforeModelCallExtensions({
@@ -378,19 +412,46 @@ class AgentRuntime {
 
     return await this.#compactMessages({
       reason: "manual",
+      pressure,
     });
   }
 
   #compactMessages = async (input: {
     reason: "automatic" | "manual";
+    pressure?: ContextPressure;
     signal?: AbortSignal;
+    remainingInput?: ReadonlyArray<UserContentBlock>;
   }): Promise<CompactionResult> => {
+    const startedAt = Date.now();
     const before = this.messages;
+    this.#events.emit("context_compaction_start", {
+      reason: input.reason,
+      pressure: input.pressure,
+      messageCount: before.length,
+    });
     const result = await this.#compactWithSummary({
       messages: before,
       signal: input.signal,
+      remainingInput: input.remainingInput,
+      onThinkingDelta: (delta) => {
+        this.#events.emit("context_compaction_thinking_delta", { delta });
+      },
+      onSummaryDelta: (delta) => {
+        this.#events.emit("context_compaction_summary_delta", { delta });
+      },
     });
-    this.#events.emit("context_compacted", { before, after: result.messages });
+    this.#events.emit("context_compacted", {
+      before,
+      after: result.messages,
+      reason: input.reason,
+      pressure: input.pressure,
+      beforeMessageCount: before.length,
+      afterMessageCount: result.messages.length,
+      droppedMessageCount: result.droppedMessageCount,
+      durationMs: Date.now() - startedAt,
+      summary: result.summary,
+      usage: result.usage,
+    });
     this.messages = result.messages;
     return result;
   };
@@ -398,17 +459,34 @@ class AgentRuntime {
   #compactWithSummary = async (input: {
     messages: ReadonlyArray<AgentMessage>;
     signal?: AbortSignal;
+    remainingInput?: ReadonlyArray<UserContentBlock>;
+    onThinkingDelta?: (delta: string) => void;
+    onSummaryDelta?: (delta: string) => void;
   }): Promise<CompactionResult> => {
     const summaryRequestMessage: AgentMessage = {
       role: "user",
       content: [{ type: "text", text: COMPACTION_SUMMARY_REQUEST }],
     };
+    // 摘要请求只带对话文本；工具 schema 与结构化块是大头，去掉可显著降低过载概率。
+    const summarize = (message: AgentMessage): AgentMessage => ({
+      role: message.role === "tool" ? "user" : message.role,
+      content: message.content.flatMap((block) => {
+        if (block.type === "text") return [textBlock(block.text)];
+        if (block.type === "tool_result") {
+          const text = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
+          return [textBlock(`[tool output] ${text}`)];
+        }
+        return [];
+      }),
+    });
 
     const response = await this.modelClient.complete({
       system: this.system,
-      messages: [...input.messages, summaryRequestMessage],
-      tools: [...this.tools],
+      messages: [...input.messages.map(summarize), summaryRequestMessage],
+      tools: [],
       signal: input.signal,
+      onThinkingDelta: input.onThinkingDelta,
+      onTextDelta: input.onSummaryDelta,
     });
 
     const summaryText = response.content
@@ -419,12 +497,20 @@ class AgentRuntime {
       throw new Error("empty compaction summary");
     }
 
+    const messages: Array<AgentMessage> = [{
+      role: "user",
+      content: [{ type: "text", text: `[Context summary] ${summaryText}` }],
+    }];
+    const remainingInput = input.remainingInput?.map((block) => block.type === "text" ? block.text : "").join(" ").trim();
+    if (remainingInput) {
+      messages.push(createUserMessage(remainingInput));
+    }
+
     return {
-      messages: [{
-        role: "user",
-        content: [{ type: "text", text: `[Context summary] ${summaryText}` }],
-      }],
+      messages,
       droppedMessageCount: input.messages.length,
+      summary: summaryText,
+      usage: response.usage,
     };
   };
 

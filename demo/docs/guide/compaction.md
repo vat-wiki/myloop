@@ -12,13 +12,15 @@ fallback 行为很朴素：
 4. 始终保持 `tool_call` / `tool_result` 成对。
 5. 如果仍放不下，抛出明确的 context exhausted 错误。
 
+自动压缩的摘要请求本身也可能因上下文过满而失败。此时降级为截断：丢弃旧历史，只保留最后一条 user 消息继续当前回合；`context_compacted` 的 `summary` 以 `[Context truncated]` 开头标记降级。
+
 ## 手动压缩
 
 ```ts
 await agent.compact();
 ```
 
-Runtime 会在每次 ModelClient 调用前触发 `context_pressure`；发生压缩后触发 `context_compacted`。
+Runtime 会在每次 ModelClient 调用前触发 `context_pressure`。开始压缩时触发 `context_compaction_start`；压缩摘要和推理流分别通过 `context_compaction_summary_delta` 与 `context_compaction_thinking_delta` 暴露；完成后触发 `context_compacted`。
 
 ## 触发时机
 

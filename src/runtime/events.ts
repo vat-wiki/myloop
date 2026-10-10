@@ -1,6 +1,8 @@
 import type { AgentMessage } from "./messages.js";
-import type { ModelResponse } from "./model-client.js";
+import type { ModelResponse, ModelUsage } from "./model-client.js";
 import type { ContextPressure } from "./context.js";
+
+export type ContextCompactionReason = "automatic" | "manual";
 
 export type EventListener<T> = (event: T) => void;
 
@@ -16,7 +18,25 @@ export type AgentEventMap = {
   tool_start: { id: string; name: string; input: Record<string, unknown> };
   tool_end: { id: string; name: string; input: Record<string, unknown>; output: unknown };
   context_pressure: { pressure: ContextPressure };
-  context_compacted: { before: Array<AgentMessage>; after: Array<AgentMessage> };
+  context_compaction_start: {
+    reason: ContextCompactionReason;
+    pressure?: ContextPressure;
+    messageCount: number;
+  };
+  context_compaction_thinking_delta: { delta: string };
+  context_compaction_summary_delta: { delta: string };
+  context_compacted: {
+    before: Array<AgentMessage>;
+    after: Array<AgentMessage>;
+    reason: ContextCompactionReason;
+    pressure?: ContextPressure;
+    beforeMessageCount: number;
+    afterMessageCount: number;
+    droppedMessageCount: number;
+    durationMs: number;
+    summary: string;
+    usage?: ModelUsage;
+  };
   heartbeat: { tick: number; at: number; running: boolean };
   end: { response: ModelResponse };
   error: { error: unknown };

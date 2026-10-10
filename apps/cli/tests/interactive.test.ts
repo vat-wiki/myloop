@@ -46,37 +46,24 @@ describe("interactive loop", () => {
     expect(loop.isStopped()).toBe(true);
   });
 
-  it("does not discard input while the agent is running", async () => {
+  it("rejects input while the agent is running", async () => {
     const agent = createAgent({ running: true });
     const loop = createLoop(agent);
-    loop.handleLine("queued task");
+    loop.handleLine("new task");
     await loop.drain();
 
     expect(submit).not.toHaveBeenCalled();
-    expect(output).toContainEqual("agent is running — input queued\n");
-    expect(output.some((line) => line.includes("queued task"))).toBe(true);
+    expect(output).toContainEqual("agent is running — press Esc to interrupt\n");
+    expect(output.some((line) => line.includes("new task"))).toBe(false);
     expect(loop.isStopped()).toBe(false);
   });
 
-  it("echoes queue status immediately for each line typed while running", () => {
-    const agent = createAgent({ running: true });
-    const loop = createLoop(agent);
-    loop.handleLine("first");
-    loop.handleLine("second");
-
-    expect(output.filter((line) => line.includes("queued:")).length).toBe(2);
-    expect(output.at(-1)).toContain('"first", "second"');
-  });
-
-  it("aborts a running agent on interrupt and discards queued input", async () => {
+  it("aborts a running agent on interrupt and accepts new input afterwards", async () => {
     const agent = createAgent({ running: true });
     (agent.abort as ReturnType<typeof vi.fn>).mockImplementation(() => {
       (agent as { running: boolean }).running = false;
     });
     const loop = createLoop(agent);
-    loop.handleLine("queued task");
-    await loop.drain();
-
     loop.interrupt();
     expect(agent.abort).toHaveBeenCalledTimes(1);
     expect(loop.isStopped()).toBe(false);
@@ -92,22 +79,19 @@ describe("interactive loop", () => {
     expect(loop.isStopped()).toBe(true);
   });
 
-  it("aborts a running agent on escape and discards queued input", () => {
+  it("aborts a running agent on escape", () => {
     const agent = createAgent({ running: true });
     const onEscape = vi.fn();
     const loop = createInteractiveLoop({ agent, submit, write: (t) => output.push(t), onEscape });
-    loop.handleLine("queued task");
-
     loop.handleEscape();
     expect(agent.abort).toHaveBeenCalledTimes(1);
-    expect(output).toContainEqual("interrupted — queued input discarded\n");
+    expect(output).toContainEqual("interrupted\n");
     expect(onEscape).toHaveBeenCalledTimes(1);
   });
 
-  it("discards queued input on escape without aborting an idle agent", () => {
+  it("ignores escape while the agent is idle", () => {
     const agent = createAgent();
     const loop = createInteractiveLoop({ agent, submit, write: (t) => output.push(t) });
-    loop.handleLine("queued task");
 
     loop.handleEscape();
     expect(agent.abort).not.toHaveBeenCalled();

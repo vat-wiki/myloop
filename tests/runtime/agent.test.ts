@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentRuntime } from "../../src/runtime/agent.js";
 import { createInMemoryArtifactStore } from "../../src/runtime/artifacts.js";
+import { estimateJsonTokens } from "../../src/runtime/context.js";
 import { textBlock, thinkingBlock, toolCallBlock, toolResultBlock } from "../../src/runtime/messages.js";
 import type { ModelClient, ModelRequest, ModelResponse } from "../../src/runtime/model-client.js";
 import type { CommandHost } from "../../src/command/index.js";
@@ -425,6 +426,7 @@ describe("Agent compaction", () => {
     const complete = vi.fn(async (request: ModelRequest) => {
       requests.push(structuredClone(request.messages));
       if (requests.length === 1) {
+        request.onTextDelta?.("previous conversation");
         return response([textBlock("previous conversation")]);
       }
       return response([textBlock("summarized answer")]);
@@ -434,28 +436,35 @@ describe("Agent compaction", () => {
       compactionThreshold: 0.5,
     });
     const compacted: Array<{ before: number; after: number }> = [];
+    const compactionEvents: Array<string> = [];
+    const summaryDeltas: Array<string> = [];
     agent.on("context_compacted", (event) => {
       compacted.push({ before: event.before.length, after: event.after.length });
+    });
+    agent.on("context_compaction_start", (event) => {
+      compactionEvents.push(`start:${event.reason}:${event.messageCount}`);
+    });
+    agent.on("context_compaction_summary_delta", (event) => {
+      summaryDeltas.push(event.delta);
     });
 
     await agent.run("hello");
 
-    expect(compacted).toEqual([{ before: 1, after: 1 }]);
+    expect(compacted).toEqual([{ before: 1, after: 2 }]);
+    expect(compactionEvents).toEqual(["start:automatic:1"]);
+    expect(summaryDeltas).toEqual(["previous conversation"]);
     expect(agent.messages).toEqual([{
       role: "user",
       content: [textBlock("[Context summary] previous conversation")],
-    }, { role: "assistant", content: [textBlock("summarized answer")] }]);
+    }, { role: "user", content: [textBlock("hello")] }, { role: "assistant", content: [textBlock("summarized answer")] }]);
     expect(requests[0]).toEqual([
       { role: "user", content: [textBlock("hello")] },
-      {
-        role: "user",
-        content: [textBlock("请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。")],
-      },
+      { role: "user", content: [textBlock("请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。")] },
     ]);
     expect(requests[1]).toEqual([{
       role: "user",
       content: [textBlock("[Context summary] previous conversation")],
-    }]);
+    }, { role: "user", content: [textBlock("hello")] }]);
   });
 
   it("manual compact() collapses history and reports droppedMessageCount", async () => {
@@ -487,6 +496,113 @@ describe("Agent compaction", () => {
     await agent.run("hello");
 
     await expect(agent.compact()).rejects.toThrow("empty compaction summary");
+  });
+
+  it("restores remaining input after automatic compaction so the model answers it", async () => {
+    const requests: Array<ModelRequest["messages"]> = [];
+    const complete = vi.fn(async (request: ModelRequest) => {
+      requests.push(structuredClone(request.messages));
+      if (requests.length === 1) {
+        return response([textBlock("summarized answer")]);
+      }
+      return response([textBlock("answered")]);
+    });
+    const agent = new AgentRuntime({
+      modelClient: pressureClient(complete, 20),
+      compactionThreshold: 0.5,
+    });
+
+    const result = await agent.run("hello");
+
+    expect(result.content).toEqual([textBlock("answered")]);
+    expect(requests[1]).toEqual([
+      { role: "user", content: [textBlock("[Context summary] summarized answer")] },
+      { role: "user", content: [textBlock("hello")] },
+    ]);
+    expect(agent.messages).toEqual([
+      { role: "user", content: [textBlock("[Context summary] summarized answer")] },
+      { role: "user", content: [textBlock("hello")] },
+      { role: "assistant", content: [textBlock("answered")] },
+    ]);
+  });
+
+  it("summarizes a slimmed transcript without tools so the summary request stays small", async () => {
+    const requests: Array<ModelRequest> = [];
+    const modelClient: ModelClient = {
+      complete: async (request: ModelRequest) => {
+        requests.push({
+          ...request,
+          messages: structuredClone(request.messages),
+          tools: structuredClone(request.tools),
+        });
+        if (requests.length === 1) {
+          request.onTextDelta?.("summary");
+          return response([textBlock("summary")]);
+        }
+        return response([textBlock("answered")]);
+      },
+      context: {
+        contextWindowTokens: 20,
+        estimateRequestTokens: (r: ModelRequest) => estimateJsonTokens(r),
+      },
+    };
+    const tools = [{ name: "terminal", description: "run commands", parameters: { type: "object", properties: {} } }];
+    const agent = new AgentRuntime({
+      modelClient,
+      system: "sys",
+      tools,
+      compactionThreshold: 0.5,
+    });
+
+    await agent.run("hello");
+
+    expect(requests[0].tools).toEqual([]);
+    expect(requests[0].messages).toEqual([
+      { role: "user", content: [textBlock("hello")] },
+      { role: "user", content: [textBlock("请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。")] },
+    ]);
+  });
+
+  it("falls back to truncating history when the automatic compaction request fails", async () => {
+    const errors: Array<unknown> = [];
+    const compacted: Array<{ after: number; dropped: number }> = [];
+    let completeCalls = 0;
+    const modelClient: ModelClient = {
+      complete: async ({ onTextDelta }) => {
+        completeCalls += 1;
+        if (completeCalls === 1) {
+          onTextDelta?.("first answer");
+          return response([textBlock("first answer")]);
+        }
+        if (completeCalls === 2) {
+          throw new Error("prompt too long");
+        }
+        return response([textBlock("answered")]);
+      },
+      context: {
+        contextWindowTokens: 200,
+        estimateRequestTokens: (r: ModelRequest) => estimateJsonTokens(r),
+      },
+    };
+    const agent = new AgentRuntime({
+      modelClient,
+      compactionThreshold: 0.4,
+    });
+    agent.on("error", (event) => errors.push(event.error));
+    agent.on("context_compacted", (event) => {
+      compacted.push({ after: event.afterMessageCount, dropped: event.droppedMessageCount });
+    });
+
+    await agent.run("hello");
+    const result = await agent.run("second");
+
+    expect(result.content).toEqual([textBlock("answered")]);
+    expect(errors).toHaveLength(1);
+    expect(compacted).toEqual([{ after: 1, dropped: 2 }]);
+    expect(agent.messages).toEqual([
+      { role: "user", content: [textBlock("second")] },
+      { role: "assistant", content: [textBlock("answered")] },
+    ]);
   });
 });
 

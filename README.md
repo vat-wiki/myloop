@@ -138,13 +138,15 @@ fallback 行为很朴素：
 4. 始终保持 `tool_call` / `tool_result` 成对。
 5. 如果仍放不下，抛出明确的 context exhausted 错误。
 
+自动压缩的摘要请求本身也可能因上下文过满而失败。此时降级为截断：丢弃旧历史，只保留最后一条 user 消息继续当前回合；`context_compacted` 的 `summary` 以 `[Context truncated]` 开头标记降级。
+
 也可以手动压缩：
 
 ```ts
 await agent.compact();
 ```
 
-Runtime 会在每次 ModelClient 调用前触发 `context_pressure`；发生压缩后触发 `context_compacted`。
+Runtime 会在每次 ModelClient 调用前触发 `context_pressure`。开始压缩时触发 `context_compaction_start`；压缩摘要和推理流分别通过 `context_compaction_summary_delta` 与 `context_compaction_thinking_delta` 暴露；完成后触发 `context_compacted`。
 
 压缩触发点不是 context window 的最后一条边界。ModelClient 会提供 `reservedOutputTokens` 和 `safetyTokens`；Agent 用两者预留输出空间和估算误差余量。Anthropic 默认额外预留 20,000 tokens，因此会更早进入确定性 fallback，而不是撞到物理极限才失败。
 
@@ -541,6 +543,9 @@ agent.on("tool_end", ({ name, input, output }) => {
 | `tool_start` | command host 工具开始执行前 |
 | `tool_end` | command host 工具执行完成后 |
 | `context_pressure` | 每次 ModelClient 调用前上下文压力检查后 |
+| `context_compaction_start` | 开始生成上下文摘要时，包含原因、压力和消息数 |
+| `context_compaction_summary_delta` | 压缩摘要流式增量 |
+| `context_compaction_thinking_delta` | 压缩推理流式增量 |
 | `context_compacted` | fallback 压缩改变了消息历史 |
 | `end` | 本次 `run()` 正常完成 |
 | `error` | 本次 `run()` 抛错 |
@@ -613,7 +618,7 @@ const modelClient: ModelClient = {
     contextWindowTokens: 200_000,
     reservedOutputTokens: 8192,
     estimateRequestTokens(request) {
-      return Math.ceil(JSON.stringify(request).length / 4);
+      return estimateJsonTokens(request);
     },
   },
   async complete(request) {

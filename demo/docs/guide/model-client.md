@@ -118,7 +118,7 @@ const modelClient: ModelClient = {
     contextWindowTokens: 200_000,
     reservedOutputTokens: 8192,
     estimateRequestTokens(request) {
-      return Math.ceil(JSON.stringify(request).length / 4);
+      return estimateJsonTokens(request);
     },
   },
   async complete(request) {

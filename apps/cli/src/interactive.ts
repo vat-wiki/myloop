@@ -17,73 +17,44 @@ export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }
   isStopped: () => boolean;
   drain: () => Promise<void>;
 } {
-  const queue: Array<string> = [];
-  let processing = false;
+  let pending: Promise<void> = Promise.resolve();
   let stopped = false;
 
-  function writeQueueStatus(): void {
-    if (queue.length === 0) return;
-    write(`[${queue.length} queued: ${queue.map((line) => JSON.stringify(line.trim())).join(", ")}]\n`);
-  }
-
-  async function drain(): Promise<void> {
-    if (processing) return;
-    processing = true;
-    let didWork = false;
-    try {
-      while (queue.length > 0) {
-        const line = queue.shift();
-        if (line === undefined) break;
-        const input = line.trim();
-        if (!input) continue;
-        if (EXIT_COMMANDS.has(input)) {
-          stopped = true;
-          return;
-        }
-        if (input === "/help") {
-          write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
-          continue;
-        }
-        if (agent.running) {
-          write("agent is running — input queued\n");
-          writeQueueStatus();
-          queue.push(input);
-          return;
-        }
-        didWork = true;
-        await submit(input);
-        if (stopped) return;
-      }
-    } finally {
-      processing = false;
+  async function run(input: string): Promise<void> {
+    if (EXIT_COMMANDS.has(input)) {
+      stopped = true;
+      return;
     }
-    if (didWork && !stopped) onIdle?.();
+    if (input === "/help") {
+      write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
+      return;
+    }
+    await submit(input);
+    if (!stopped) onIdle?.();
   }
 
   return {
     handleLine(rawLine: string): void {
+      const input = rawLine.trim();
+      if (!input) return;
       if (agent.running) {
-        queue.push(rawLine);
-        if (rawLine.trim()) writeQueueStatus();
+        write("agent is running — press Esc to interrupt\n");
         return;
       }
-      queue.push(rawLine);
-      void drain();
+      pending = run(input).catch(() => {});
     },
     handleEscape(): void {
       if (!agent.running) {
         return;
       }
       agent.abort(new Error("interrupted"));
-      queue.length = 0;
-      write("interrupted — queued input discarded\n");
+      write("interrupted\n");
       onEscape?.();
     },
     interrupt(): void {
       if (agent.running) {
         agent.abort(new Error("interrupted"));
-        queue.length = 0;
-        write("interrupted — queued input discarded\n");
+        write("interrupted\n");
         return;
       }
       stopped = true;
@@ -91,6 +62,8 @@ export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }
     isStopped(): boolean {
       return stopped;
     },
-    drain,
+    drain(): Promise<void> {
+      return pending;
+    },
   };
 }

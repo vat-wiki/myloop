@@ -79,11 +79,10 @@ TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更�
   "model": "claude-sonnet-4-5",
   "baseURL": "https://api.anthropic.com/v1",
   "apiKey": "local-development-key-only",
-  "allowLocalFiles": true,
-  "contextWindowTokens": 131072
+  "allowLocalFiles": true
 }
 ```
 
 `apiKey` 可以直接写入本地开发配置，但不要提交包含真实 key 的配置文件；不配置时默认读取 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`。
 
-`contextWindowTokens` 用于覆盖协议默认上下文窗口：`openai-chat` 和 `openai-responses` 默认 `128000`，`anthropic` 默认 `200000`。CLI 也可用 `--context-window-tokens` 覆盖。
+上下文窗口由协议 client 决定：`openai-chat` 和 `openai-responses` 默认 `128000`，`anthropic` 默认 `200000`。配置文件中的 `contextWindowTokens` 已弃用，写入会被忽略。

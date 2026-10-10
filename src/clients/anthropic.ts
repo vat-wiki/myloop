@@ -23,6 +23,7 @@ import type {
   ModelResponse,
 } from "../runtime/model-client.js";
 import { sumTokenCounts } from "../runtime/model-client.js";
+import { estimateJsonTokens } from "../runtime/context.js";
 
 const ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
 const ANTHROPIC_API_VERSION = "2023-06-01";
@@ -157,7 +158,7 @@ class Anthropic {
       contextWindowTokens: contextWindowTokens ?? 200_000,
       reservedOutputTokens: maxTokens,
       estimateRequestTokens(request: ModelRequest): number {
-        return Math.ceil(JSON.stringify(request).length / 4);
+        return estimateJsonTokens(request);
       },
     };
   }

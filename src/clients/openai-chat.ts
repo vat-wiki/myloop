@@ -20,6 +20,7 @@ import {
   toOpenAIToolResultText,
 } from "./openai-common.js";
 import { thinkingBlock } from "../runtime/messages.js";
+import { estimateJsonTokens } from "../runtime/context.js";
 import { postSse } from "./http.js";
 
 type OpenAIChatMessage = Record<string, unknown>;
@@ -94,7 +95,7 @@ class OpenAIChat {
       contextWindowTokens: contextWindowTokens ?? 128_000,
       reservedOutputTokens: this.maxTokens ?? 4_096,
       estimateRequestTokens(request: ModelRequest): number {
-        return Math.ceil(JSON.stringify(request).length / 4);
+        return estimateJsonTokens(request);
       },
     };
   }

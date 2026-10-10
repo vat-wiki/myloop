@@ -9,4 +9,5 @@
 - 验证：聚焦检查 → 按影响范围 typecheck/build/全量测试；从状态/错误尾部诊断。
 - Git：查看变更；未要求不修改。
 - Shell：优先用 command 工具的 `cwd`，不用 `cd`；不运行交互命令或守护进程。
+- `tmux`：禁止 `kill-server`；测试/长驻任务用 `-L myloop-test` 建隔离会话，清理只对本次创建的精确 session 名执行 `kill-session`，不碰默认 server 或他人会话。
 - 安全：破坏性操作、项目依赖变更、发布/部署/迁移、`sudo` 需明确要求；不输出密钥。

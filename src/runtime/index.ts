@@ -21,7 +21,7 @@ export type {
 export { repairRuntimeSessionSnapshot } from "./session.js";
 export * from "./artifacts.js";
 export * from "./user-input.js";
-export type { AgentEventMap, EventListener } from "./events.js";
+export type { AgentEventMap, ContextCompactionReason, EventListener } from "./events.js";
 export { EventBus } from "./events.js";
 export {
   createCommandHostHandler,
@@ -49,4 +49,9 @@ export {
 export type {
   ContextPressure,
   CompactionResult,
+} from "./context.js";
+export {
+  estimateJsonTokens,
+  estimateMessagesTokens,
+  estimateTextTokens,
 } from "./context.js";

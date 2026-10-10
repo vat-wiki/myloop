@@ -14,6 +14,9 @@
 | `tool_start` | terminal 工具开始执行前 |
 | `tool_end` | terminal 工具执行完成后 |
 | `context_pressure` | 每次 ModelClient 调用前上下文压力检查后 |
+| `context_compaction_start` | 开始生成上下文摘要时，包含原因、压力和消息数 |
+| `context_compaction_summary_delta` | 压缩摘要流式增量 |
+| `context_compaction_thinking_delta` | 压缩推理流式增量 |
 | `context_compacted` | fallback 压缩改变了消息历史 |
 | `end` | 本次 `run()` 正常完成 |
 | `error` | 本次 `run()` 抛错 |
