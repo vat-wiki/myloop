@@ -27,12 +27,12 @@ describe("Memory", () => {
     expect(memory.readIndex()).toBe("- [[cli-bot]] 驱力仲裁者");
   });
 
-  it("appends compaction summaries to pending as single lines", () => {
+  it("appends compaction summaries to inbox as single lines", () => {
     const memory = new Memory({ cwd: tempRoot(), home: tempRoot() });
     memory.appendPending("决定用 wikilink\n连接条目");
     memory.appendPending("  ");
     memory.appendPending("第二条");
-    const pending = readFileSync(join(memory.dir, "pending.md"), "utf8");
+    const pending = readFileSync(join(memory.dir, "inbox.md"), "utf8");
     expect(pending).toBe("- 决定用 wikilink 连接条目\n- 第二条\n");
   });
 
@@ -42,7 +42,7 @@ describe("Memory", () => {
     expect(memory.senses()).toMatchObject({ pendingLines: 0, brokenLinkCount: 0, stalestDays: null });
 
     mkdirSync(memory.dir, { recursive: true });
-    writeFileSync(join(memory.dir, "pending.md"), "- a\n- b\n- c\n");
+    writeFileSync(join(memory.dir, "inbox.md"), "- a\n- b\n- c\n");
     writeFileSync(join(memory.dir, "old-note.md"), [
       "---",
       "title: 旧闻",

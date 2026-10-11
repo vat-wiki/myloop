@@ -113,7 +113,7 @@ export function selfMaintenanceDrive<W extends IdleSenses = IdleSenses>(options?
         prompt: [
           "已空闲较久，做一件小的自我维护，按优先级选其一：",
           "1) git status/diff 核对工作区是否有未提交或半成品改动，验证后处置；",
-          "2) 记忆库巡检：rg 查 pending 积压与 [[断链]]，核对 index 与条目一致；",
+          "2) 记忆库巡检：rg 查 inbox.md 积压与 [[断链]]，核对 index 与条目一致；",
           "3) 复核 wiki 里 verified 最旧的条目，对照现实刷新或修正；",
           "4) 都正常则刷新 state.md 巡检记录，或做一个小的自我改进。",
         ].join("\n"),
@@ -155,7 +155,7 @@ export function memoryGroomingDrive<W extends MemoryHealthSenses = MemoryHealthS
       const reason = parts.length > 0 ? parts.join("、") : "例行整理";
       return {
         pressure,
-        prompt: `记忆整理（${reason}）：读取记忆目录 index.md，把 pending.md 的摘要消化成条目或并入现有条目，rg 排查 [[断链]]，新条目前先检索防重复，更新相关 updated/verified。`,
+        prompt: `记忆整理（${reason}）：读取记忆目录 index.md，把 inbox.md 的摘要消化成条目或并入现有条目，rg 排查 [[断链]]，新条目前先检索防重复，更新相关 updated/verified。`,
       };
     },
   };

@@ -16,7 +16,7 @@ import { dirname, join, resolve } from "node:path";
  */
 export type MemorySenses = {
   now: number;
-  /** pending.md 未消化行数 */
+  /** inbox.md 未消化行数 */
   pendingLines: number;
   /** 指向不存在条目的 [[wikilink]] 数 */
   brokenLinkCount: number;
@@ -26,7 +26,7 @@ export type MemorySenses = {
 
 const INDEX_NAME = "index.md";
 const STATE_NAME = "state.md";
-const PENDING_NAME = "pending.md";
+const PENDING_NAME = "inbox.md";
 
 export const INDEX_TEMPLATE = `# Memory Index
 
@@ -38,7 +38,7 @@ export const INDEX_TEMPLATE = `# Memory Index
 - 正文用 [[条目名]] 关联相关条目；反链用 rg 查
 - 新建条目前先 rg 本目录找相似主题——更新已有条目，不要另起新条目
 - 以继任者为读者：没见过本仓库历史的人也能读懂；环境事实引用前对照现实验证并更新 verified
-- state.md 是交班条（此刻停在哪），会话收尾刷新；pending.md 是待消化摘要，整理成条目后删除对应行
+- state.md 是交班条（此刻停在哪），会话收尾刷新；inbox.md 是待消化摘要，整理成条目后删除对应行
 `;
 
 export const STATE_TEMPLATE = `# State（交班条）
