@@ -127,4 +127,36 @@ describe("DriveArbiter", () => {
     await arbiter.tick(1, createDeps(world()));
     expect(skips).toEqual(["no-drive-above-threshold"]);
   });
+
+  it("reports every drive evaluation per tick", async () => {
+    const reports: Array<Array<string>> = [];
+    const arbiter = new DriveArbiter<TestWorld>({
+      drives: [
+        fakeDrive("hot", { pressure: 0.9 }),
+        fakeDrive("cold", { pressure: 0 }),
+      ],
+      onEvaluated: (evaluations) => reports.push(evaluations.map((e) => `${e.drive.name}:${e.outcome ? e.outcome.pressure : null}:${e.passed}`)),
+    });
+
+    await arbiter.tick(1, createDeps(world()));
+    expect(reports).toEqual([["hot:0.9:true", "cold:null:false"]]);
+  });
+
+  it("marks cooling drives as passed=false but still reports their pressure", async () => {
+    let now = 0;
+    const reports: Array<Array<string>> = [];
+    const acts: Array<string> = [];
+    const arbiter = new DriveArbiter<TestWorld>({
+      drives: [fakeDrive("a", { pressure: 1, cooldownMs: 1_000 })],
+      now: () => now,
+      onEvaluated: (evaluations) => reports.push(evaluations.map((e) => `${e.drive.name}:${e.passed}`)),
+      onAct: (selection) => acts.push(selection.drive.name),
+    });
+
+    await arbiter.tick(1, createDeps(world()));
+    now = 500;
+    await arbiter.tick(2, createDeps(world()));
+    expect(acts).toEqual(["a"]);
+    expect(reports).toEqual([["a:true"], ["a:false"]]);
+  });
 });
