@@ -55,7 +55,7 @@ function errorText(error: unknown): string {
 }
 
 const COMPACTION_SUMMARY_REQUEST =
-  "请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。";
+  "这次对话到此为止，接下来由看不到以上历史的继任者继续工作。请写一份交接：当前任务与进展、已完成步骤及结果、关键决策及理由、文件路径、未解决的问题与下一步。继任者无需原始对话即可接手。只输出交接内容。";
 
 const COMPACTION_FALLBACK_PREFIX = "[Context truncated]";
 
@@ -499,7 +499,7 @@ class AgentRuntime {
 
     const messages: Array<AgentMessage> = [{
       role: "user",
-      content: [{ type: "text", text: `[Context summary] ${summaryText}` }],
+      content: [{ type: "text", text: `[Handover summary] ${summaryText}` }],
     }];
     const remainingInput = input.remainingInput?.map((block) => block.type === "text" ? block.text : "").join(" ").trim();
     if (remainingInput) {

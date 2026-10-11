@@ -455,15 +455,15 @@ describe("Agent compaction", () => {
     expect(summaryDeltas).toEqual(["previous conversation"]);
     expect(agent.messages).toEqual([{
       role: "user",
-      content: [textBlock("[Context summary] previous conversation")],
+      content: [textBlock("[Handover summary] previous conversation")],
     }, { role: "user", content: [textBlock("hello")] }, { role: "assistant", content: [textBlock("summarized answer")] }]);
     expect(requests[0]).toEqual([
       { role: "user", content: [textBlock("hello")] },
-      { role: "user", content: [textBlock("请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。")] },
+      { role: "user", content: [textBlock("这次对话到此为止，接下来由看不到以上历史的继任者继续工作。请写一份交接：当前任务与进展、已完成步骤及结果、关键决策及理由、文件路径、未解决的问题与下一步。继任者无需原始对话即可接手。只输出交接内容。")] },
     ]);
     expect(requests[1]).toEqual([{
       role: "user",
-      content: [textBlock("[Context summary] previous conversation")],
+      content: [textBlock("[Handover summary] previous conversation")],
     }, { role: "user", content: [textBlock("hello")] }]);
   });
 
@@ -478,7 +478,7 @@ describe("Agent compaction", () => {
     expect(result.messages).toHaveLength(1);
     expect(agent.messages).toEqual([{
       role: "user",
-      content: [textBlock("[Context summary] the user greeted the assistant")],
+      content: [textBlock("[Handover summary] the user greeted the assistant")],
     }]);
   });
 
@@ -516,11 +516,11 @@ describe("Agent compaction", () => {
 
     expect(result.content).toEqual([textBlock("answered")]);
     expect(requests[1]).toEqual([
-      { role: "user", content: [textBlock("[Context summary] summarized answer")] },
+      { role: "user", content: [textBlock("[Handover summary] summarized answer")] },
       { role: "user", content: [textBlock("hello")] },
     ]);
     expect(agent.messages).toEqual([
-      { role: "user", content: [textBlock("[Context summary] summarized answer")] },
+      { role: "user", content: [textBlock("[Handover summary] summarized answer")] },
       { role: "user", content: [textBlock("hello")] },
       { role: "assistant", content: [textBlock("answered")] },
     ]);
@@ -559,7 +559,7 @@ describe("Agent compaction", () => {
     expect(requests[0].tools).toEqual([]);
     expect(requests[0].messages).toEqual([
       { role: "user", content: [textBlock("hello")] },
-      { role: "user", content: [textBlock("请总结以上对话，保留当前任务、已完成步骤及结果、关键决策、文件路径、未解决的问题。摘要将用于继续执行任务。只输出摘要。")] },
+      { role: "user", content: [textBlock("这次对话到此为止，接下来由看不到以上历史的继任者继续工作。请写一份交接：当前任务与进展、已完成步骤及结果、关键决策及理由、文件路径、未解决的问题与下一步。继任者无需原始对话即可接手。只输出交接内容。")] },
     ]);
   });
 
