@@ -110,7 +110,13 @@ export function selfMaintenanceDrive<W extends IdleSenses = IdleSenses>(options?
       if (pressure <= 0) return null;
       return {
         pressure,
-        prompt: "已空闲较久：整理记忆/笔记、验证旧任务状态，或做一件小的自我改进。",
+        prompt: [
+          "已空闲较久，做一件小的自我维护，按优先级选其一：",
+          "1) git status/diff 核对工作区是否有未提交或半成品改动，验证后处置；",
+          "2) 记忆库巡检：rg 查 pending 积压与 [[断链]]，核对 index 与条目一致；",
+          "3) 复核 wiki 里 verified 最旧的条目，对照现实刷新或修正；",
+          "4) 都正常则刷新 state.md 巡检记录，或做一个小的自我改进。",
+        ].join("\n"),
       };
     },
   };
