@@ -13,7 +13,7 @@ Maes 行为网络、The Sims 的需求系统）。
 ## 五个角色，一人一个动作
 
 ```
-宿主 evaluate  → 量世界：看 inbox/探针，打包成 World 快照（眼睛）
+宿主 evaluate  → 量世界：看 PENDING/探针，打包成 World 快照（眼睛）
 驱力           → 读自己要的感官算疼："我疼 0.83" + "若让我上，指令是这个 prompt"（本能）
 DriveArbiter        → 裁决：过滤不达阈值/冷却中的，选最疼的（脑干）
 宿主 act       → 动手：拿 prompt 调 agent.run（手）
@@ -91,7 +91,7 @@ pressure = clamp01(unreadCount / unreadQuota) × clamp01(age / patienceMs)
 ## Drive 字段速查
 
 - `name`：身份证。arbiter 的冷却 Map 以它为 key；同名驱力共享冷却槽；会出现在日志
-  和 prompt 前缀里。kebab-case 动词短语（`inbox-sweep`）。
+  和 prompt 前缀里。kebab-case 动词短语（`pending-sweep`）。
 - `threshold`：痛阈。压力 >= threshold 才进候选（严格 `<` 淘汰，恰好等于会触发）。
   调它 = 调性格：调高变高冷，调低变热心。与 pressure 是两个数：一个实时测量，一个固定性格。
 - `cooldownMs`：不应期。进候选即记录，冷却期内压力再高也没资格。失败重试风暴的限幅器。

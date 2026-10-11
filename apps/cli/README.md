@@ -12,9 +12,9 @@ npm run cli -- --model gpt-test "fix the tests"
 npm run cli -- --model gpt-test
 ```
 
-`--bot` 开启 bot 模式：复用运行时心跳（默认 60s 一次，`config.heartbeat.intervalMs` 可调），每个 tick 由驱力系统（respond-unread / self-check / self-maintenance / memory-gardening）评估是否行动，没驱力过阈就静默跳过（0 模型调用）；agent 忙时用户输入会记为未读，由驱力稍后处理。设计细节见 `src/bot/DESIGN.md`。
+`--bot` 开启 bot 模式：复用运行时心跳（默认 60s 一次，`config.heartbeat.intervalMs` 可调），每个 tick 由驱力系统（respond-unread / self-check / self-maintenance / memory-grooming）评估是否行动，没驱力过阈就静默跳过（0 模型调用）；agent 忙时用户输入会记为未读，由驱力稍后处理。设计细节见 `src/bot/DESIGN.md`。
 
-bot 模式带长期记忆 wiki：`.agents/myloop/memory/`（项目内找不到则回落 `~/.agents/myloop/memory/`）。`index.md` 是唯一常驻注入 system prompt 的门户索引，条目由模型用文件工具自主维护（`[[wikilink]]` 关联、inbox 待消化摘要），代码只负责脚手架、压缩摘要进 inbox 和健康信号（积压/断链/陈旧）——wiki 本身没有硬编码结构，由 memory-gardening 驱力整理。详见 `src/memory/memory.ts`。
+bot 模式带记忆库：`.agents/myloop/memory/`（项目内找不到则回落 `~/.agents/myloop/memory/`）。`index.md` 是唯一常驻注入 system prompt 的门户索引，`state.md` 是交班条（此刻停在哪，handover 事件的落地），条目由模型用文件工具自主维护（`[[wikilink]]` 关联、pending.md 待消化摘要），代码只负责脚手架、压缩摘要进 pending 和健康信号（积压/断链/陈旧）——记忆库本身没有硬编码结构，由 memory-grooming 驱力整理。详见 `src/memory/memory.ts`。
 
 `--log=off|events|errors` 控制模型和工具审计日志，默认 `events`；`--log` 等价于 `--log=events`。事件文件在 `.agents/myloop/logs/`，运行时异常写入同目录的 `diagnostics-*.jsonl`。会话文件保存在 `.agents/myloop/sessions/`。
 

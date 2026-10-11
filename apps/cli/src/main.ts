@@ -98,9 +98,9 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       cwd: process.cwd(),
     });
     if (options.bot) {
-      // 压缩摘要不丢：进记忆 inbox，由 memory-gardening 驱力消化成 wiki 条目
+      // 压缩摘要不丢：进记忆 pending，由 memory-grooming 驱力消化成 wiki 条目
       agent.on("context_compacted", (event) => {
-        if (event.summary.trim()) memory.appendInbox(event.summary);
+        if (event.summary.trim()) memory.appendPending(event.summary);
       });
     }
     if (options.sessionId) {
@@ -190,11 +190,17 @@ export async function runBotLoop({
     unread: () => pendingUnread,
     memorySenses: () => memory.senses(),
   });
-  const arbiter = new DriveArbiter<CliWorldShape>({ drives: [...host.drives], onSkip: (reason) => {
-    if (reason !== "no-drive-above-threshold") {
+  const arbiter = new DriveArbiter<CliWorldShape>({
+    drives: [...host.drives],
+    onSkip: (reason) => {
       process.stderr.write(`  (tick skipped: ${reason})\n`);
-    }
-  } });
+    },
+    onEvaluated: (evaluations) => {
+      process.stderr.write(
+        `  (drives: ${evaluations.map((e) => `${e.drive.name}=${e.outcome ? e.outcome.pressure.toFixed(2) : "idle"}${e.passed ? "*" : ""}`).join(" ")})\n`,
+      );
+    },
+  });
   const offHeartbeat = agent.on("heartbeat", (event) => {
     if (event.running || agent.running) return;
     void arbiter

@@ -20,39 +20,40 @@ describe("Memory", () => {
     const memory = new Memory({ cwd: root, home: tempRoot() });
     memory.ensureScaffold();
     expect(memory.readIndex()).toContain("# Memory Index");
+    expect(readFileSync(join(memory.dir, "state.md"), "utf8")).toContain("# State（交班条）");
 
     writeFileSync(join(memory.dir, "index.md"), "- [[cli-bot]] 驱力仲裁者");
     memory.ensureScaffold();
     expect(memory.readIndex()).toBe("- [[cli-bot]] 驱力仲裁者");
   });
 
-  it("appends compaction summaries to inbox as single lines", () => {
+  it("appends compaction summaries to pending as single lines", () => {
     const memory = new Memory({ cwd: tempRoot(), home: tempRoot() });
-    memory.appendInbox("决定用 wikilink\n连接条目");
-    memory.appendInbox("  ");
-    memory.appendInbox("第二条");
-    const inbox = readFileSync(join(memory.dir, "inbox.md"), "utf8");
-    expect(inbox).toBe("- 决定用 wikilink 连接条目\n- 第二条\n");
+    memory.appendPending("决定用 wikilink\n连接条目");
+    memory.appendPending("  ");
+    memory.appendPending("第二条");
+    const pending = readFileSync(join(memory.dir, "pending.md"), "utf8");
+    expect(pending).toBe("- 决定用 wikilink 连接条目\n- 第二条\n");
   });
 
-  it("senses report inbox backlog, broken links and stalest entry", () => {
+  it("senses report pending backlog, broken links and stalest entry", () => {
     const memory = new Memory({ cwd: tempRoot(), home: tempRoot() });
     memory.ensureScaffold();
-    expect(memory.senses()).toMatchObject({ inboxLines: 0, brokenLinkCount: 0, stalestDays: null });
+    expect(memory.senses()).toMatchObject({ pendingLines: 0, brokenLinkCount: 0, stalestDays: null });
 
     mkdirSync(memory.dir, { recursive: true });
-    writeFileSync(join(memory.dir, "inbox.md"), "- a\n- b\n- c\n");
+    writeFileSync(join(memory.dir, "pending.md"), "- a\n- b\n- c\n");
     writeFileSync(join(memory.dir, "old-note.md"), [
       "---",
       "title: 旧闻",
-      "type: fact",
+      "type: decision",
       "created: 2026-09-01T00:00:00.000Z",
       "updated: 2026-09-01T00:00:00.000Z",
       "---",
       "关联 [[missing-entry]]",
     ].join("\n"));
     const senses = memory.senses();
-    expect(senses.inboxLines).toBe(3);
+    expect(senses.pendingLines).toBe(3);
     expect(senses.brokenLinkCount).toBe(1);
     expect(senses.stalestDays).toBeGreaterThanOrEqual(30);
   });

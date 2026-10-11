@@ -42,9 +42,9 @@ export type IdleSenses = {
   lastActionAt?: number;
 };
 
-/** 记忆 wiki 的健康感官：来源见 src/memory/memory.ts 的 Memory.senses() */
+/** 记忆库的健康感官：来源见 src/memory/memory.ts 的 Memory.senses() */
 export type MemoryHealthSenses = {
-  inboxLines: number;
+  pendingLines: number;
   brokenLinkCount: number;
   stalestDays: number | null;
 };
@@ -117,10 +117,10 @@ export function selfMaintenanceDrive<W extends IdleSenses = IdleSenses>(options?
 }
 
 /**
- * 记忆整理驱力：inbox 有积压或 wiki 有断链时产生压力，空闲时也会缓慢累积。
+ * 记忆整理驱力：pending 有积压或 wiki 有断链时产生压力，空闲时也会缓慢累积。
  * 行动 prompt 只给方向，具体 wiki 操作由模型用文件工具自主完成。
  */
-export function memoryGardeningDrive<W extends MemoryHealthSenses = MemoryHealthSenses>(options?: {
+export function memoryGroomingDrive<W extends MemoryHealthSenses = MemoryHealthSenses>(options?: {
   threshold?: number;
   cooldownMs?: number;
   /** 闲置多久后哪怕没有明显问题也主动整理一次（毫秒） */
@@ -130,26 +130,26 @@ export function memoryGardeningDrive<W extends MemoryHealthSenses = MemoryHealth
   const cooldownMs = options?.cooldownMs ?? 30 * 60_000;
   const idleFullMs = options?.idleFullMs ?? 12 * 60 * 60_000;
   return {
-    name: "memory-gardening",
+    name: "memory-grooming",
     threshold,
     cooldownMs,
-    evaluate: ({ inboxLines, brokenLinkCount, stalestDays, lastActionAt, now }) => {
-      const problems = Math.min(1, (inboxLines / 20) * 0.5 + (brokenLinkCount / 5) * 0.5);
+    evaluate: ({ pendingLines, brokenLinkCount, stalestDays, lastActionAt, now }) => {
+      const problems = Math.min(1, (pendingLines / 20) * 0.5 + (brokenLinkCount / 5) * 0.5);
       const elapsed = lastActionAt === undefined
         ? idleFullMs
         : Math.min(Math.max(0, now - lastActionAt), idleFullMs);
       const idle = elapsed / idleFullMs;
       const stale = stalestDays === null ? 0 : Math.min(1, stalestDays / 14);
-      const pressure = Math.max(problems, idle * 0.3, stale * 0.4);
+      const pressure = Math.max(problems, idle, stale);
       if (pressure < 0.05) return null;
       const parts: Array<string> = [];
-      if (inboxLines > 0) parts.push(`inbox 积压 ${inboxLines} 行`);
+      if (pendingLines > 0) parts.push(`PENDING 积压 ${pendingLines} 行`);
       if (brokenLinkCount > 0) parts.push(`${brokenLinkCount} 个断链`);
       if (stalestDays !== null && stalestDays >= 7) parts.push(`最旧条目 ${stalestDays} 天未验证`);
       const reason = parts.length > 0 ? parts.join("、") : "例行整理";
       return {
         pressure,
-        prompt: `记忆整理（${reason}）：读取记忆目录 index.md，把 inbox.md 的摘要消化成条目或并入现有条目，rg 排查 [[断链]]，新条目前先检索防重复，更新相关 updated/verified。`,
+        prompt: `记忆整理（${reason}）：读取记忆目录 index.md，把 pending.md 的摘要消化成条目或并入现有条目，rg 排查 [[断链]]，新条目前先检索防重复，更新相关 updated/verified。`,
       };
     },
   };
