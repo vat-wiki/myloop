@@ -19,7 +19,7 @@ describe("Memory", () => {
     const root = tempRoot();
     const memory = new Memory({ cwd: root, home: tempRoot() });
     memory.ensureScaffold();
-    expect(memory.readIndex()).toContain("# Memory Index");
+    expect(memory.readIndex()).toContain("## Memory Index");
     expect(readFileSync(join(memory.dir, "state.md"), "utf8")).toContain("# State（交班条）");
 
     writeFileSync(join(memory.dir, "index.md"), "- [[cli-bot]] 驱力仲裁者");
@@ -73,7 +73,7 @@ describe("Memory", () => {
     const memory = new Memory({ cwd: tempRoot(), home: tempRoot() });
     memory.ensureScaffold();
     const section = renderMemorySection({ dir: memory.dir, index: memory.readIndex() });
-    expect(section).toContain("## 长期记忆");
+    expect(section).toContain("# 长期记忆");
     expect(section).toContain(memory.dir);
     expect(section).toContain("[[条目名]]");
   });

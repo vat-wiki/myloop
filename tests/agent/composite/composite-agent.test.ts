@@ -128,7 +128,7 @@ describe("createCompositeAgent", () => {
     });
     expect(requests[0]?.messages[0]?.content[2]).toEqual({
       type: "text",
-      text: expect.stringContaining("Workers:"),
+      text: expect.stringContaining("## Workers"),
     });
   });
 });

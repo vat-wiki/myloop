@@ -73,16 +73,42 @@ TUI 使用 OpenTUI 和 Solid 构建。运行入口要求 Node.js 26.4.0 或更�
 
 `myloop-tui` 会自动读取 JSON 配置文件。全局配置是 `~/.agents/myloop.json`；同时从当前目录向上查找项目配置 `.agents/myloop.json`。配置合并很简单：project 字段直接覆盖全局同名字段。最终优先级是：CLI 参数 > project 配置 > 全局配置 > 环境变量和内置默认值。
 
+协议相关的模型、连接和思考设置按 `protocols` 分对象合并。例如：
+
 ```json
 {
-  "protocol": "anthropic",
-  "model": "claude-sonnet-4-5",
-  "baseURL": "https://api.anthropic.com/v1",
-  "apiKey": "local-development-key-only",
-  "allowLocalFiles": true
+  "protocols": {
+    "anthropic": {
+      "model": "mycoder",
+      "baseURL": "http://127.0.0.1:7800/anthropic/v1",
+      "thinking": true,
+      "thinkingBudgetTokens": 8192
+    },
+    "openai-responses": {
+      "model": "gpt-x",
+      "thinking": true,
+      "reasoningEffort": "medium",
+      "reasoningSummary": "auto"
+    }
+  }
 }
 ```
 
-`apiKey` 可以直接写入本地开发配置，但不要提交包含真实 key 的配置文件；不配置时默认读取 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`。
+```json
+{
+  "protocol": "anthropic",
+  "protocols": {
+    "anthropic": {
+      "model": "claude-sonnet-4-5",
+      "baseURL": "https://api.anthropic.com/v1",
+      "apiKey": "local-development-key-only",
+      "thinking": true,
+      "thinkingBudgetTokens": 8192
+    }
+  }
+}
+```
 
-上下文窗口由协议 client 决定：`openai-chat` 和 `openai-responses` 默认 `128000`，`anthropic` 默认 `200000`。配置文件中的 `contextWindowTokens` 已弃用，写入会被忽略。
+`apiKey` 可以直接写入本地开发配置，但不要提交包含真实 key 的配置文件；对应协议未配置时默认读取 `ANTHROPIC_API_KEY` 或 `OPENAI_API_KEY`。
+
+上下文窗口由协议 client 决定：`openai-chat` 和 `openai-responses` 默认 `128000`，`anthropic` 默认 `200000`。旧的扁平配置字段已移除，不再兼容。

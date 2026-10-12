@@ -42,12 +42,23 @@ describe("createUserInputAdapter", () => {
     ]);
   });
 
-  it("rejects local files unless they are explicitly allowed", async () => {
-    const adapter = createUserInputAdapter();
+  it("allows local files by default and rejects them when explicitly disabled", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "myloop-input-default-"));
+    temporaryDirectories.push(directory);
+    const imagePath = join(directory, "image.png");
+    await writeFile(imagePath, "image");
+    const defaultAdapter = createUserInputAdapter();
+    const [image] = await defaultAdapter.resolve({ type: "imageFile", path: imagePath });
+    expect(image).toMatchObject({
+      type: "image",
+      mediaType: "image/png",
+      source: { type: "artifact" },
+    });
 
-    await expect(adapter.resolve({
+    const disabledAdapter = createUserInputAdapter({ allowLocalFiles: false });
+    await expect(disabledAdapter.resolve({
       type: "imageFile",
-      path: "/tmp/image.png",
+      path: imagePath,
     })).rejects.toThrow("local input files are not allowed");
   });
 

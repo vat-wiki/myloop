@@ -16,7 +16,7 @@ export function composeSystem({ base, skills = [] }: ComposeSystemOptions): stri
 
 function renderSkill(skill: Skill): string {
   return [
-    `## Skill: ${skill.name}`,
+    `# Skill: ${skill.name}`,
     "",
     skill.instructions,
   ].join("\n");

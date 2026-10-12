@@ -3,16 +3,40 @@ import { dirname, join, resolve } from "node:path";
 
 export type ConfigProtocol = "anthropic" | "openai-chat" | "openai-responses";
 
+export type ProtocolConnectionConfig = {
+  model?: string;
+  apiKey?: string;
+  baseURL?: string;
+};
+
+export type AnthropicProtocolConfig = ProtocolConnectionConfig & {
+  thinking?: boolean;
+  thinkingBudgetTokens?: number;
+};
+
+export type OpenAIChatProtocolConfig = ProtocolConnectionConfig & {
+  thinking?: boolean;
+  reasoningEffort?: "low" | "medium" | "high";
+};
+
+export type OpenAIResponsesProtocolConfig = ProtocolConnectionConfig & {
+  thinking?: boolean;
+  reasoningEffort?: "low" | "medium" | "high";
+  reasoningSummary?: "auto" | "concise" | "detailed";
+};
+
+export type ProtocolConfig = {
+  anthropic?: AnthropicProtocolConfig;
+  "openai-chat"?: OpenAIChatProtocolConfig;
+  "openai-responses"?: OpenAIResponsesProtocolConfig;
+};
+
 export type AgentConfig = {
   protocol?: ConfigProtocol;
-  model?: string;
-  baseURL?: string;
-  apiKey?: string;
-  allowLocalFiles?: boolean;
   compactionThreshold?: number;
   sessionId?: string;
   systemPrompt?: string | false;
-  thinking?: boolean;
+  protocols?: ProtocolConfig;
   heartbeat?: {
     intervalMs?: number;
   };
@@ -39,11 +63,6 @@ const PROTOCOLS: ReadonlyArray<ConfigProtocol> = [
 ];
 const AGENTS_DIRECTORY = ".agents";
 const CONFIG_FILENAME = "myloop.json";
-const DEPRECATED_CONFIG_FIELDS = new Set([
-  "maxTokens",
-  "contextWindowTokens",
-  "timeoutMs",
-]);
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 
 export async function loadAgentConfig(
@@ -78,11 +97,8 @@ export async function loadAgentConfig(
     const projectConfig = await readJsonConfig(projectPath);
     if (projectConfig) {
       sources.project = projectPath;
+      merged = mergeConfigs(merged, projectConfig);
     }
-    merged = {
-      ...merged,
-      ...projectConfig,
-    };
   }
 
   return {
@@ -132,14 +148,10 @@ function validateAgentConfig(value: unknown): AgentConfig {
   const input = value as Record<string, unknown>;
   assertAllowedFields(input, [
     "protocol",
-    "model",
-    "baseURL",
-    "apiKey",
-    "allowLocalFiles",
     "compactionThreshold",
     "sessionId",
     "systemPrompt",
-    "thinking",
+    "protocols",
     "heartbeat",
     "bot",
     "botPrompt",
@@ -152,39 +164,6 @@ function validateAgentConfig(value: unknown): AgentConfig {
       throw new Error(`config protocol must be one of: ${PROTOCOLS.join(", ")}`);
     }
     config.protocol = input.protocol;
-  }
-
-  if (input.model !== undefined) {
-    assertString(input.model, "config model");
-    if (!input.model.trim()) {
-      throw new Error("config model cannot be empty");
-    }
-    config.model = input.model;
-  }
-
-  if (input.baseURL !== undefined) {
-    assertString(input.baseURL, "config baseURL");
-    try {
-      new URL(input.baseURL);
-    } catch {
-      throw new Error("config baseURL must be a valid URL");
-    }
-    config.baseURL = input.baseURL;
-  }
-
-  if (input.apiKey !== undefined) {
-    assertString(input.apiKey, "config apiKey");
-    if (!input.apiKey.trim()) {
-      throw new Error("config apiKey cannot be empty");
-    }
-    config.apiKey = input.apiKey;
-  }
-
-  if (input.allowLocalFiles !== undefined) {
-    if (typeof input.allowLocalFiles !== "boolean") {
-      throw new Error("config allowLocalFiles must be a boolean");
-    }
-    config.allowLocalFiles = input.allowLocalFiles;
   }
 
   if (input.compactionThreshold !== undefined) {
@@ -218,11 +197,8 @@ function validateAgentConfig(value: unknown): AgentConfig {
     }
   }
 
-  if (input.thinking !== undefined) {
-    if (typeof input.thinking !== "boolean") {
-      throw new Error("config thinking must be a boolean");
-    }
-    config.thinking = input.thinking;
+  if (input.protocols !== undefined) {
+    config.protocols = validateProtocolConfigs(input.protocols);
   }
 
   if (input.heartbeat !== undefined) {
@@ -275,16 +251,160 @@ function isProtocol(value: unknown): value is ConfigProtocol {
   return PROTOCOLS.includes(value as ConfigProtocol);
 }
 
+function validateProtocolConfigs(value: unknown): ProtocolConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("config protocols must be an object");
+  }
+
+  const input = value as Record<string, unknown>;
+  assertAllowedFields(input, ["anthropic", "openai-chat", "openai-responses"], "config protocols");
+  const config: ProtocolConfig = {};
+
+  if (input.anthropic !== undefined) {
+    config.anthropic = validateProtocolConfig<AnthropicProtocolConfig>(
+      input.anthropic,
+      "config protocols.anthropic",
+      ["thinking", "thinkingBudgetTokens"],
+    );
+    if (config.anthropic.thinkingBudgetTokens !== undefined) {
+      assertThinkingBudgetTokens(config.anthropic.thinkingBudgetTokens);
+    }
+  }
+
+  if (input["openai-chat"] !== undefined) {
+    config["openai-chat"] = validateProtocolConfig<OpenAIChatProtocolConfig>(
+      input["openai-chat"],
+      "config protocols.openai-chat",
+      ["thinking", "reasoningEffort"],
+    );
+  }
+
+  if (input["openai-responses"] !== undefined) {
+    config["openai-responses"] = validateProtocolConfig<OpenAIResponsesProtocolConfig>(
+      input["openai-responses"],
+      "config protocols.openai-responses",
+      ["thinking", "reasoningEffort", "reasoningSummary"],
+    );
+  }
+
+  return config;
+}
+
+function validateProtocolConfig<T extends Record<string, unknown>>(
+  value: unknown,
+  name: string,
+  allowedFields: ReadonlyArray<string>,
+): T {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${name} must be an object`);
+  }
+
+  const input = value as Record<string, unknown>;
+  assertAllowedFields(input, ["model", "apiKey", "baseURL", ...allowedFields], name);
+  const config: Record<string, unknown> = {};
+
+  if (input.model !== undefined) {
+    assertString(input.model, `${name}.model`);
+    if (!input.model.trim()) {
+      throw new Error(`${name}.model cannot be empty`);
+    }
+    config.model = input.model;
+  }
+
+  if (input.apiKey !== undefined) {
+    assertString(input.apiKey, `${name}.apiKey`);
+    if (!input.apiKey.trim()) {
+      throw new Error(`${name}.apiKey cannot be empty`);
+    }
+    config.apiKey = input.apiKey;
+  }
+
+  if (input.baseURL !== undefined) {
+    assertString(input.baseURL, `${name}.baseURL`);
+    try {
+      new URL(input.baseURL);
+    } catch {
+      throw new Error(`${name}.baseURL must be a valid URL`);
+    }
+    config.baseURL = input.baseURL;
+  }
+
+  if (input.thinking !== undefined) {
+    if (typeof input.thinking !== "boolean") {
+      throw new Error(`${name}.thinking must be a boolean`);
+    }
+    config.thinking = input.thinking;
+  }
+
+  if (input.thinkingBudgetTokens !== undefined) {
+    config.thinkingBudgetTokens = input.thinkingBudgetTokens;
+  }
+
+  if (input.reasoningEffort !== undefined) {
+    if (!isReasoningEffort(input.reasoningEffort)) {
+      throw new Error(`${name}.reasoningEffort must be one of: low, medium, high`);
+    }
+    config.reasoningEffort = input.reasoningEffort;
+  }
+
+  if (input.reasoningSummary !== undefined) {
+    if (!isReasoningSummary(input.reasoningSummary)) {
+      throw new Error(`${name}.reasoningSummary must be one of: auto, concise, detailed`);
+    }
+    config.reasoningSummary = input.reasoningSummary;
+  }
+
+  return config as T;
+}
+
+function isReasoningEffort(value: unknown): value is "low" | "medium" | "high" {
+  return value === "low" || value === "medium" || value === "high";
+}
+
+function isReasoningSummary(value: unknown): value is "auto" | "concise" | "detailed" {
+  return value === "auto" || value === "concise" || value === "detailed";
+}
+
+function assertThinkingBudgetTokens(value: number): void {
+  if (!Number.isInteger(value) || value < 1_024) {
+    throw new Error("config protocols.anthropic.thinkingBudgetTokens must be an integer of at least 1024");
+  }
+}
+
+function mergeConfigs(left: AgentConfig, right: AgentConfig): AgentConfig {
+  const merged: AgentConfig = {
+    ...left,
+    ...right,
+  };
+  const anthropic = mergeProtocolConfig(left.protocols?.anthropic, right.protocols?.anthropic);
+  const openaiChat = mergeProtocolConfig(left.protocols?.["openai-chat"], right.protocols?.["openai-chat"]);
+  const openaiResponses = mergeProtocolConfig(left.protocols?.["openai-responses"], right.protocols?.["openai-responses"]);
+  if (anthropic || openaiChat || openaiResponses) {
+    merged.protocols = {};
+    if (anthropic) merged.protocols.anthropic = anthropic;
+    if (openaiChat) merged.protocols["openai-chat"] = openaiChat;
+    if (openaiResponses) merged.protocols["openai-responses"] = openaiResponses;
+  }
+  return merged;
+}
+
+function mergeProtocolConfig<T extends object>(left: T | undefined, right: T | undefined): T | undefined {
+  if (left === undefined) return right;
+  if (right === undefined) return left;
+  return { ...left, ...right };
+}
+
 function assertAllowedFields(
   value: Record<string, unknown>,
   allowedFields: ReadonlyArray<string>,
+  prefix = "config",
 ): void {
   const allowed = new Set(allowedFields);
   const unknownField = Object.keys(value).find(
-    (field) => !allowed.has(field) && !DEPRECATED_CONFIG_FIELDS.has(field),
+    (field) => !allowed.has(field),
   );
   if (unknownField !== undefined) {
-    throw new Error(`config has unknown field: ${unknownField}`);
+    throw new Error(`${prefix} has unknown field: ${unknownField}`);
   }
 }
 

@@ -98,16 +98,27 @@ describe("Anthropic", () => {
       body: JSON.stringify({
         model: "claude-test",
         max_tokens: 2_000,
-        system: "system prompt",
+        system: [{
+          type: "text",
+          text: "system prompt",
+          cache_control: { type: "ephemeral" },
+        }],
         tools: [{
           name: "bash",
           description: "Run bash",
           input_schema: { type: "object" },
+          cache_control: { type: "ephemeral" },
         }],
         messages: [
           {
             role: "user",
-            content: [{ type: "tool_result", tool_use_id: "call-0", content: "previous", is_error: true }],
+            content: [{
+              type: "tool_result",
+              tool_use_id: "call-0",
+              content: "previous",
+              is_error: true,
+              cache_control: { type: "ephemeral" },
+            }],
           },
           {
             role: "user",
@@ -198,6 +209,40 @@ describe("Anthropic", () => {
     });
 
     expect(result.stopReason).toBe("max_tokens");
+  });
+
+  it("places cache breakpoints on system, last tool, and penultimate message", async () => {
+    const transport = vi.fn<Parameters<HttpTransport>, ReturnType<HttpTransport>>()
+      .mockResolvedValue(httpJson({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+      }));
+    const modelClient = new Anthropic({ model: "claude-test", transport });
+
+    await modelClient.complete({
+      system: "system",
+      tools: [
+        { name: "a", description: "a", parameters: { type: "object" } },
+        { name: "b", description: "b", parameters: { type: "object" } },
+      ],
+      messages: [
+        { role: "user", content: [textBlock("old turn")] },
+        { role: "assistant", content: [textBlock("old reply")] },
+        { role: "tool", content: [toolResultBlock("call-9", "result")] },
+        { role: "user", content: [textBlock("new input")] },
+      ],
+    });
+
+    const body = JSON.parse(String(vi.mocked(transport).mock.calls[0]?.[0]?.body));
+    expect(body.system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(body.tools.map((tool: { cache_control?: unknown }) => tool.cache_control)).toEqual([
+      undefined,
+      { type: "ephemeral" },
+    ]);
+    // 断点在倒数第二个消息（上轮工具结果），新输入留在缓存外。
+    expect(body.messages[2].content[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(body.messages[3].content[0].cache_control).toBeUndefined();
   });
 
   it("streams Anthropic text and tool arguments", async () => {

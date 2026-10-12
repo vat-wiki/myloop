@@ -16,6 +16,7 @@ export type OpenAIClientOptions = {
     effort?: string;
     summary?: string;
   };
+  reasoningEffort?: "low" | "medium" | "high";
   headers?: Record<string, string>;
   artifactStore?: ArtifactStore;
   fetch?: typeof fetch;

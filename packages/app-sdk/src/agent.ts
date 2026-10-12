@@ -19,6 +19,8 @@ export type CreateAppAgentOptions = {
   heartbeat?: HeartbeatOptions;
   thinking?: boolean;
   thinkingBudgetTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+  reasoningSummary?: "auto" | "concise" | "detailed";
   allowLocalFiles?: boolean;
   system: string;
   sessionId?: string;
@@ -55,7 +57,7 @@ export async function createAppAgent(options: CreateAppAgentOptions): Promise<Ap
         model: options.model,
       })
     : undefined;
-  const input = createUserInputAdapter({ allowLocalFiles: options.allowLocalFiles ?? false });
+  const input = createUserInputAdapter({ allowLocalFiles: options.allowLocalFiles ?? true });
   const sessionStore = options.sessionStore ?? new FileSessionStore({ cwd: options.cwd });
   const agent = new SingleAgent({
     name: options.name ?? "app-agent",
@@ -69,6 +71,8 @@ export async function createAppAgent(options: CreateAppAgentOptions): Promise<Ap
       maxTokens: options.maxTokens,
       thinking: options.thinking,
       thinkingBudgetTokens: options.thinkingBudgetTokens,
+      reasoningEffort: options.reasoningEffort,
+      reasoningSummary: options.reasoningSummary,
     }),
     input,
     system: options.system,

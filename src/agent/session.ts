@@ -229,13 +229,13 @@ function renderBrainInput({
     .join("\n");
 
   return `
-User message:
+## User message
 ${input}
 
 Important information collected by perception:
 ${perception}
 
-Available hands:
+## Available hands
 ${handList}
 
 Delegation budget: ${maxDelegations}
@@ -259,7 +259,7 @@ function renderBrainFollowUpInput({
     .join("\n\n");
 
   return `
-Hand results:
+## Hand results
 ${delegationList}
 
 Decide whether more work is needed. If the working answer is ready, finish.

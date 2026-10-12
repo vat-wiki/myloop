@@ -29,6 +29,29 @@ CLI 默认在启动或一次性任务前打印最终系统提示词和工具声�
 
 CLI 复用 TUI 配置文件。它会读取 `~/.agents/myloop.json`，再从当前目录向上查找 `.agents/myloop.json`；项目配置覆盖全局配置，命令行参数覆盖配置文件。
 
+协议相关的模型、连接和思考配置都放在 `protocols` 对象中：
+
+```json
+{
+  "protocol": "anthropic",
+  "protocols": {
+    "anthropic": {
+      "model": "mycoder",
+      "baseURL": "http://127.0.0.1:7800/anthropic/v1",
+      "apiKey": "local-development-key-only",
+      "thinking": true,
+      "thinkingBudgetTokens": 8192
+    },
+    "openai-responses": {
+      "model": "gpt-x",
+      "thinking": true,
+      "reasoningEffort": "medium",
+      "reasoningSummary": "auto"
+    }
+  }
+}
+```
+
 系统提示词按显式路径、从当前目录向上查找的 `.agents/myloop/system.md`、全局 `~/.agents/myloop/system.md`、内置提示词的顺序加载。
  
 ## 设计要点

@@ -10,7 +10,7 @@ describe("composeSystem", () => {
       ],
     });
 
-    expect(result).toBe("Base instructions\n\n## Skill: Testing\n\nRun tests.");
+    expect(result).toBe("Base instructions\n\n# Skill: Testing\n\nRun tests.");
   });
 
   it("joins multiple skills in order with their catalog metadata", () => {
@@ -22,7 +22,7 @@ describe("composeSystem", () => {
       ],
     });
 
-    expect(result).toBe("Base\n\n## Skill: A\n\nDo A.\n\n## Skill: B\n\nDo B.");
+    expect(result).toBe("Base\n\n# Skill: A\n\nDo A.\n\n# Skill: B\n\nDo B.");
   });
 
   it("falls back to the skill list when base is empty", () => {
@@ -31,7 +31,7 @@ describe("composeSystem", () => {
       skills: [{ name: "Only", description: "ignored", instructions: "Run." }],
     });
 
-    expect(result).toBe("## Skill: Only\n\nRun.");
+    expect(result).toBe("# Skill: Only\n\nRun.");
   });
 
   it("returns an empty string when nothing is provided", () => {

@@ -89,7 +89,7 @@ class AgentRuntime {
 
   constructor({
     modelClient,
-    system = "你是终端Agent,用command工具执行命令来完成任务,用中文简洁回答。",
+    system = "你是终端Agent,用command工具执行命令来完成任务。始终用用户消息的语言进行回复和可见thinking;代码、命令和专有名词保持原样。",
     extensions = [],
     commandHost,
     commandHosts,

@@ -62,7 +62,7 @@ export function createUserInputAdapter(
   options: UserInputAdapterOptions = {},
 ): UserInputResolver {
   const resolvedOptions = {
-    allowLocalFiles: options.allowLocalFiles ?? false,
+    allowLocalFiles: options.allowLocalFiles ?? true,
     allowRemoteUrls: options.allowRemoteUrls ?? true,
     maxLocalFileBytes: options.maxLocalFileBytes ?? DEFAULT_MAX_LOCAL_FILE_BYTES,
     maxTotalInputBytes: options.maxTotalInputBytes ?? DEFAULT_MAX_LOCAL_FILE_BYTES,

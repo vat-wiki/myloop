@@ -29,7 +29,7 @@ describe("CLI system prompt", () => {
     });
 
     expect(system).toContain("Be precise.");
-    expect(system).toContain("## Skills");
+    expect(system).toContain("# Skills");
     expect(system).toContain("- `project-skill`: Project skill");
     expect(system).not.toContain("Project instructions");
   });

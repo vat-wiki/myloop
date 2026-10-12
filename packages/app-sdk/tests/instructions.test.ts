@@ -42,7 +42,7 @@ describe("app instructions", () => {
     expect(system).toContain("Terminal agent.");
     expect(system).toContain("Be precise.");
     expect(system).toContain("Use focused checks.");
-    expect(system).toContain("## Skills");
+    expect(system).toContain("# Skills");
     expect(system).toContain("- `project-skill`: Project skill");
     expect(system).not.toContain("Skill instructions");
   });

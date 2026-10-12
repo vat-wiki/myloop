@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-import { homedir } from "node:os";
-import { sep } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import type { SingleAgent } from "myloop/agent";
 import { createAppAgent, loadAppSkills, type AppSessionSummary } from "@myloop/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
+import { formatStartupStatus } from "./startup.js";
 import { createInteractiveLoop } from "./interactive.js";
-import { createLineOutput, createReadlineSpinner } from "./line-output.js";
+import { createLineOutput, createReadlineSpinner, formatInteractivePrompt } from "./tui.js";
 import { composeCliSystem, loadAgentsInstructions, loadSystemPrompt } from "./prompt.js";
 import {
+  formatEventDivider,
   printAgentPrompts,
   printSessionHistory,
   runTask,
@@ -23,11 +23,14 @@ import { Memory, renderMemorySection } from "./memory/memory.js";
 
 export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)): Promise<number> {
   let options: CliOptions;
+  let sources: import("myloop/config").ConfigSources = {};
   try {
     const configPath = argv.includes("--config")
       ? argv[argv.indexOf("--config") + 1]
       : undefined;
-    const { config } = await loadAgentConfig({ env: process.env, configPath });
+    const loaded = await loadAgentConfig({ env: process.env, configPath });
+    const config = loaded.config;
+    sources = loaded.sources;
     options = parseCliArgs(argv, process.env, config);
   } catch (error) {
     process.stderr.write(`${errorText(error)}\n\n${formatCliHelp()}\n`);
@@ -44,6 +47,9 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
     process.stdout.write(formatSessionList(sessions));
     return 0;
   }
+
+  const sessionId = options.sessionId ?? createCliSessionId();
+  process.stderr.write(`${formatStartupStatus({ options, sources, sessionId })}\n`);
 
   let input = options.prompt;
   if (input === undefined && !process.stdin.isTTY) {
@@ -82,7 +88,9 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       baseURL: options.baseURL,
       compactionThreshold: options.compactionThreshold,
       thinking: options.thinking,
-      allowLocalFiles: options.allowLocalFiles,
+      thinkingBudgetTokens: options.thinkingBudgetTokens,
+      reasoningEffort: options.reasoningEffort,
+      reasoningSummary: options.reasoningSummary,
       heartbeat: {
         intervalMs: options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
         mode: "always",
@@ -94,7 +102,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
         memorySection: renderMemorySection({ dir: memory.dir, index: memory.readIndex() }),
       }),
       logger: options.log,
-      sessionId: options.sessionId ?? createCliSessionId(),
+      sessionId,
       sessionStore,
       cwd: process.cwd(),
     });
@@ -222,6 +230,12 @@ export async function runBotLoop({
     input: process.stdin,
     output: process.stdout,
     prompt: formatInteractivePrompt(process.cwd()),
+    completer: (line: string): [Array<string>, string] => {
+      const commands = ["/cancel", "/exit", "/help", "/quit"];
+      const completions = line.startsWith("/") ? commands.filter((command) => command.startsWith(line)) : [];
+      return [completions, line];
+    },
+    historySize: 1_000,
   });
 
   readline.on("SIGINT", () => {
@@ -291,6 +305,10 @@ function createBotSubmit({
       out.write("agent is running");
       return;
     }
+    const divider = color
+      ? `\x1b[2m${formatEventDivider("user", {}, width)}\x1b[0m`
+      : formatEventDivider("user", {}, width);
+    out.write(`${divider}\n${input}\n`);
     await runTask({
       agent,
       input,
@@ -318,6 +336,12 @@ async function runInteractive({
   const loop = createInteractiveLoop({
     agent,
     submit: async (input) => {
+      const color = isColorEnabled(process.env, process.stderr);
+      const width = process.stderr.columns;
+      const divider = color
+        ? `\x1b[2m${formatEventDivider("user", {}, width)}\x1b[0m`
+        : formatEventDivider("user", {}, width);
+      out.write(`${divider}\n${input}\n`);
       const spinner = createReadlineSpinner(out);
       const stopSpinner = (): void => {
         if (!spinner.active) return;
@@ -340,8 +364,8 @@ async function runInteractive({
         output: out,
         status: (message) => statusWithSpinner(`${message}\n`),
         trace: (text) => statusWithSpinner(text),
-        color: isColorEnabled(process.env, process.stderr),
-        width: process.stderr.columns,
+        color,
+        width,
       });
       stopSpinner();
       removeEnd();
@@ -350,6 +374,10 @@ async function runInteractive({
       removeToolEnd();
     },
     write: (text) => out.write(text),
+    onPromptChange: (continuing) => {
+      readline.setPrompt(continuing ? "… ❯ " : formatInteractivePrompt(process.cwd()));
+      readline.prompt(true);
+    },
     onIdle: () => {
       readline.prompt(true);
     },
@@ -389,15 +417,6 @@ async function runInteractive({
   process.stdin.off("keypress", onKeypress);
 
   return 0;
-}
-
-export function formatInteractivePrompt(cwd: string, home = homedir()): string {
-  const directory = cwd === home
-    ? "~"
-    : cwd.startsWith(`${home}${sep}`)
-      ? `~${cwd.slice(home.length)}`
-      : cwd;
-  return `${directory} ❯ `;
 }
 
 function formatSessionList(sessions: ReadonlyArray<AppSessionSummary>): string {

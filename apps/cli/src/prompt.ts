@@ -8,7 +8,7 @@ import {
   type LoadedSkill,
 } from "@myloop/app-sdk";
 
-export const cliBasePrompt = "你是终端Agent。用command工具完成用户任务，用中文简洁回答。";
+export const cliBasePrompt = "你是终端Agent。用command工具完成用户任务。始终用用户消息的语言进行回复和可见thinking；代码、命令和专有名词保持原样。";
 
 const coreInstructionsPath = fileURLToPath(new URL("../system.md", import.meta.url));
 const systemPromptPath = join(".agents", "myloop", "system.md");

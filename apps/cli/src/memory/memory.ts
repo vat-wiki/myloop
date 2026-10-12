@@ -28,7 +28,7 @@ const INDEX_NAME = "index.md";
 const STATE_NAME = "state.md";
 const PENDING_NAME = "inbox.md";
 
-export const INDEX_TEMPLATE = `# Memory Index
+export const INDEX_TEMPLATE = `## Memory Index
 
 记忆库门户：写给来接手的人（每个会话都是一任新班次），此索引进心理解全库。每行一条：
 - [[条目名]] 一句话说明
@@ -142,7 +142,7 @@ export class Memory {
 export function renderMemorySection({ dir, index }: { dir: string; index: string }): string {
   return [
     "",
-    "## 长期记忆",
+    "# 长期记忆",
     "",
     `记忆库目录：${dir}（写给继任者：每个会话是一任新班次。index.md 是门户索引，条目是同目录 md 文件，用文件工具自主维护）`,
     "",

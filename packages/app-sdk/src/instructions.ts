@@ -67,7 +67,7 @@ function renderAgentsInstructions(agentsInstructions: string): string {
   if (agentsInstructions.length === 0) return "";
 
   return [
-    "## AGENTS",
+    "# AGENTS",
     "",
     "Follow the applicable instructions below; nested instructions override ancestor instructions.",
     "",
@@ -79,7 +79,7 @@ function renderSkillCatalog(skills: ReadonlyArray<LoadedSkill | Skill>): string 
   if (skills.length === 0) return "";
 
   return [
-    "## Skills",
+    "# Skills",
     "",
     "Use command tool to read the relevant `<skill-directory>/SKILL.md` before applying it.",
     "",
@@ -101,7 +101,7 @@ function renderSkillGroups(skills: ReadonlyArray<LoadedSkill | Skill>): Array<st
   }
 
   return [...groups.entries()].flatMap(([rootDirectory, entries]) => [
-    `\`${rootDirectory}\``,
+    `## \`${rootDirectory}\``,
     ...entries.map(({ skill, directory }) => {
       const suffix = directory === skill.name ? "" : ` (dir: \`${directory}\`)`;
       return `- \`${skill.name}\`${suffix}: ${skill.description}`;

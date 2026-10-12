@@ -15,6 +15,8 @@ export type CreateAppModelClientOptions = {
   maxTokens?: number;
   thinking?: boolean;
   thinkingBudgetTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+  reasoningSummary?: "auto" | "concise" | "detailed";
   fetch?: typeof fetch;
   transport?: import("myloop/clients/http").HttpTransport;
 };
@@ -48,7 +50,7 @@ export function createAppModelClient(options: CreateAppModelClientOptions): Mode
       model: options.model,
       maxTokens: options.maxTokens,
       contextWindowTokens: options.contextWindowTokens,
-      reasoning: options.thinking ? { effort: "medium", summary: "auto" } : undefined,
+      reasoningEffort: options.thinking ? options.reasoningEffort ?? "medium" : undefined,
     });
   }
   return new OpenAIResponses({
@@ -56,6 +58,11 @@ export function createAppModelClient(options: CreateAppModelClientOptions): Mode
     model: options.model,
     maxTokens: options.maxTokens,
     contextWindowTokens: options.contextWindowTokens,
-    reasoning: options.thinking ? { effort: "medium", summary: "auto" } : undefined,
+    reasoning: options.thinking
+      ? {
+          effort: options.reasoningEffort ?? "medium",
+          summary: options.reasoningSummary ?? "auto",
+        }
+      : undefined,
   });
 }

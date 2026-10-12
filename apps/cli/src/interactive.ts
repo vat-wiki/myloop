@@ -4,29 +4,40 @@ export type InteractiveLoopOptions = {
   agent: SingleAgent;
   submit: (input: string) => Promise<void>;
   write: (text: string) => void;
+  onPromptChange?: (continuing: boolean) => void;
   onIdle?: () => void;
   onEscape?: () => void;
 };
 
 const EXIT_COMMANDS = new Set(["/exit", "/quit"]);
+const CONTINUATION_SUFFIX = "\\";
 
-export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }: InteractiveLoopOptions): {
+export function createInteractiveLoop({ agent, submit, write, onPromptChange, onIdle, onEscape }: InteractiveLoopOptions): {
   handleLine: (rawLine: string) => void;
   handleEscape: () => void;
   interrupt: () => void;
   isStopped: () => boolean;
+  isContinuing: () => boolean;
   drain: () => Promise<void>;
 } {
+  let continuation: Array<string> | undefined;
   let pending: Promise<void> = Promise.resolve();
   let stopped = false;
+
+  const stopContinuation = (): void => {
+    if (continuation === undefined) return;
+    continuation = undefined;
+    onPromptChange?.(false);
+  };
 
   async function run(input: string): Promise<void> {
     if (EXIT_COMMANDS.has(input)) {
       stopped = true;
+      stopContinuation();
       return;
     }
     if (input === "/help") {
-      write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
+      write("Commands: /exit · /cancel multiline · trailing \\ continues · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
       return;
     }
     await submit(input);
@@ -36,12 +47,44 @@ export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }
   return {
     handleLine(rawLine: string): void {
       const input = rawLine.trim();
-      if (!input) return;
+      const continuing = continuation !== undefined;
+      if (!input && !continuing) return;
+      if (EXIT_COMMANDS.has(input)) {
+        stopped = true;
+        stopContinuation();
+        return;
+      }
+      if (input === "/help") {
+        write("Commands: /exit · /cancel multiline · trailing \\ continues · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
+        return;
+      }
+      if (input === "/cancel") {
+        if (continuing) {
+          stopContinuation();
+          write("multiline input cancelled\n");
+        }
+        return;
+      }
       if (agent.running) {
         write("agent is running — press Esc to interrupt\n");
         return;
       }
-      pending = run(input).catch(() => {});
+      const endsWithContinuation = input.endsWith(CONTINUATION_SUFFIX);
+      const line = endsWithContinuation ? input.slice(0, -CONTINUATION_SUFFIX.length) : input;
+      if (continuation === undefined) {
+        if (!endsWithContinuation) {
+          pending = run(input).catch(() => {});
+          return;
+        }
+        continuation = [line];
+        onPromptChange?.(true);
+        return;
+      }
+      continuation.push(line);
+      if (endsWithContinuation) return;
+      const multilineInput = continuation.join("\n");
+      stopContinuation();
+      pending = run(multilineInput).catch(() => {});
     },
     handleEscape(): void {
       if (!agent.running) {
@@ -61,6 +104,9 @@ export function createInteractiveLoop({ agent, submit, write, onIdle, onEscape }
     },
     isStopped(): boolean {
       return stopped;
+    },
+    isContinuing(): boolean {
+      return continuation !== undefined;
     },
     drain(): Promise<void> {
       return pending;

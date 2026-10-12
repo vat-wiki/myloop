@@ -42,7 +42,7 @@ describe("interactive loop", () => {
     await loop.drain();
 
     expect(submit).not.toHaveBeenCalled();
-    expect(output).toContainEqual("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
+    expect(output).toContainEqual("Commands: /exit · /cancel multiline · trailing \\ continues · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
     expect(loop.isStopped()).toBe(true);
   });
 
@@ -71,6 +71,53 @@ describe("interactive loop", () => {
     loop.handleLine("next task");
     await loop.drain();
     expect(submit).toHaveBeenCalledWith("next task");
+  });
+
+  it("shows help while the agent is running", () => {
+    const loop = createLoop(createAgent({ running: true }));
+    loop.handleLine("/help");
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(output.some((line) => line.startsWith("Commands:"))).toBe(true);
+  });
+
+  it("collects multiline input with a trailing backslash", async () => {
+    const prompts: Array<boolean> = [];
+    const loop = createInteractiveLoop({
+      agent: createAgent(),
+      submit,
+      write: (text) => output.push(text),
+      onPromptChange: (continuing) => prompts.push(continuing),
+    });
+
+    loop.handleLine("first \\");
+    expect(loop.isContinuing()).toBe(true);
+    expect(prompts).toEqual([true]);
+
+    loop.handleLine("second \\");
+    loop.handleLine("third");
+    await loop.drain();
+
+    expect(submit).toHaveBeenCalledWith("first \nsecond \nthird");
+    expect(loop.isContinuing()).toBe(false);
+    expect(prompts).toEqual([true, false]);
+  });
+
+  it("cancels multiline input and restores the normal prompt", () => {
+    const prompts: Array<boolean> = [];
+    const loop = createInteractiveLoop({
+      agent: createAgent(),
+      submit,
+      write: (text) => output.push(text),
+      onPromptChange: (continuing) => prompts.push(continuing),
+    });
+
+    loop.handleLine("first \\");
+    loop.handleLine("/cancel");
+
+    expect(loop.isContinuing()).toBe(false);
+    expect(prompts).toEqual([true, false]);
+    expect(output).toContainEqual("multiline input cancelled\n");
   });
 
   it("stops the loop on interrupt when the agent is idle", () => {

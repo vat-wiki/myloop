@@ -46,15 +46,17 @@ type AnthropicTool = {
   name: string;
   description: string;
   input_schema: Record<string, unknown>;
+  cache_control?: AnthropicCacheControl;
 };
 
 type AnthropicContentBlockParam =
-  | { type: "text"; text: string }
+  | { type: "text"; text: string; cache_control?: AnthropicCacheControl }
   | {
     type: "image";
     source:
       | { type: "url"; url: string }
       | { type: "base64"; media_type: string; data: string };
+    cache_control?: AnthropicCacheControl;
   }
   | {
     type: "document";
@@ -62,6 +64,7 @@ type AnthropicContentBlockParam =
       | { type: "url"; url: string }
       | { type: "base64"; media_type: string; data: string };
     title?: string;
+    cache_control?: AnthropicCacheControl;
   }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | {
@@ -69,7 +72,10 @@ type AnthropicContentBlockParam =
     tool_use_id: string;
     content: unknown;
     is_error?: boolean;
+    cache_control?: AnthropicCacheControl;
   };
+
+type AnthropicCacheControl = { type: "ephemeral" };
 
 type AnthropicMessageParam = {
   role: "user" | "assistant";
@@ -189,9 +195,15 @@ class Anthropic {
     const requestBody = {
       model: this.model,
       max_tokens: this.maxTokens,
-      system,
-      tools: tools.map(toAnthropicTool),
-      messages: await Promise.all(messages.map((message) => toAnthropicMessage(message, this.#artifactStore))),
+      system: [{
+        type: "text",
+        text: system,
+        cache_control: { type: "ephemeral" },
+      }],
+      tools: applyToolCacheBreakpoints(tools.map(toAnthropicTool)),
+      messages: applyMessageCacheBreakpoints(
+        await Promise.all(messages.map((message) => toAnthropicMessage(message, this.#artifactStore))),
+      ),
       ...(this.#options.thinkingBudgetTokens ? {
         thinking: {
           type: "enabled",
@@ -363,6 +375,31 @@ function toAnthropicTool(tool: ToolDefinition): AnthropicTool {
     description: tool.description,
     input_schema: tool.parameters,
   };
+}
+
+// 断点预算：system(1) + 最后工具(1) + 消息(1) ≤ 4 上限。
+// 消息断点钉在倒数第二个消息的最后一个内容块（通常是上轮工具结果）：
+// 新 user 输入留在缓存前缀之外，工具往返的增量最短、命中最稳。
+function applyMessageCacheBreakpoints(
+  messages: Array<AnthropicMessageParam>,
+): Array<AnthropicMessageParam> {
+  if (messages.length < 2) return messages;
+  const target = messages[messages.length - 2];
+  if (!target) return messages;
+  if (!Array.isArray(target.content) || target.content.length === 0) return messages;
+  const last = target.content[target.content.length - 1];
+  if (!last) return messages;
+  if (last.type === "tool_result" || last.type === "text" || last.type === "image" || last.type === "document") {
+    last.cache_control = { type: "ephemeral" };
+  }
+  return messages;
+}
+
+function applyToolCacheBreakpoints(tools: Array<AnthropicTool>): Array<AnthropicTool> {
+  if (!tools.length) return tools;
+  const last = tools[tools.length - 1];
+  if (last) last.cache_control = { type: "ephemeral" };
+  return tools;
 }
 
 async function toAnthropicMessage(

@@ -24,7 +24,7 @@ async function writeConfig(value: unknown): Promise<string> {
 describe("agent config bot options", () => {
   it("parses heartbeat, bot, and botPrompt", async () => {
     const path = await writeConfig({
-      model: "test-model",
+      protocols: { anthropic: { model: "test-model" } },
       heartbeat: { intervalMs: 250 },
       bot: true,
       botPrompt: "keep going",
@@ -65,26 +65,87 @@ describe("agent config bot options", () => {
 });
 
 describe("agent config validation", () => {
-  it("rejects invalid protocol, model, baseURL, apiKey, and sessionId values", async () => {
+  it("validates protocol-specific thinking settings", async () => {
+    const { config } = await loadAgentConfig({
+      env: {},
+      configPath: await writeConfig({
+        protocols: {
+          anthropic: {
+            model: "claude-test",
+            baseURL: "https://anthropic.example.com/v1",
+            apiKey: "anthropic-key",
+            thinking: true,
+            thinkingBudgetTokens: 8_192,
+          },
+          "openai-chat": {
+            model: "gpt-chat-test",
+            baseURL: "https://openai.example.com/v1",
+            apiKey: "openai-key",
+            thinking: true,
+            reasoningEffort: "low",
+          },
+          "openai-responses": {
+            thinking: true,
+            reasoningEffort: "high",
+            reasoningSummary: "concise",
+          },
+        },
+      }),
+    });
+
+    expect(config.protocols).toEqual({
+      anthropic: {
+        model: "claude-test",
+        baseURL: "https://anthropic.example.com/v1",
+        apiKey: "anthropic-key",
+        thinking: true,
+        thinkingBudgetTokens: 8_192,
+      },
+      "openai-chat": {
+        model: "gpt-chat-test",
+        baseURL: "https://openai.example.com/v1",
+        apiKey: "openai-key",
+        thinking: true,
+        reasoningEffort: "low",
+      },
+      "openai-responses": {
+        thinking: true,
+        reasoningEffort: "high",
+        reasoningSummary: "concise",
+      },
+    });
+
+    await expect(loadAgentConfig({
+      env: {},
+      configPath: await writeConfig({ protocols: { anthropic: { model: "  " } } }),
+    })).rejects.toThrow("config protocols.anthropic.model cannot be empty");
+
+    await expect(loadAgentConfig({
+      env: {},
+      configPath: await writeConfig({ protocols: { anthropic: { baseURL: "not-a-url" } } }),
+    })).rejects.toThrow("config protocols.anthropic.baseURL must be a valid URL");
+
+    await expect(loadAgentConfig({
+      env: {},
+      configPath: await writeConfig({ protocols: { anthropic: { timeout: 1 } } }),
+    })).rejects.toThrow("config protocols.anthropic has unknown field: timeout");
+
+    await expect(loadAgentConfig({
+      env: {},
+      configPath: await writeConfig({ protocols: { anthropic: { thinkingBudgetTokens: 1_023 } } }),
+    })).rejects.toThrow("config protocols.anthropic.thinkingBudgetTokens must be an integer of at least 1024");
+
+    await expect(loadAgentConfig({
+      env: {},
+      configPath: await writeConfig({ protocols: { "openai-responses": { reasoningEffort: "maximum" } } }),
+    })).rejects.toThrow("config protocols.openai-responses.reasoningEffort must be one of: low, medium, high");
+  });
+
+  it("rejects invalid protocol and sessionId values", async () => {
     await expect(loadAgentConfig({
       env: {},
       configPath: await writeConfig({ protocol: "gemini" }),
     })).rejects.toThrow("config protocol must be one of: anthropic, openai-chat, openai-responses");
-
-    await expect(loadAgentConfig({
-      env: {},
-      configPath: await writeConfig({ model: "  " }),
-    })).rejects.toThrow("config model cannot be empty");
-
-    await expect(loadAgentConfig({
-      env: {},
-      configPath: await writeConfig({ baseURL: "not a url" }),
-    })).rejects.toThrow("config baseURL must be a valid URL");
-
-    await expect(loadAgentConfig({
-      env: {},
-      configPath: await writeConfig({ apiKey: "" }),
-    })).rejects.toThrow("config apiKey cannot be empty");
 
     await expect(loadAgentConfig({
       env: {},
@@ -93,16 +154,6 @@ describe("agent config validation", () => {
   });
 
   it("rejects non-boolean flags and an out-of-range compactionThreshold", async () => {
-    await expect(loadAgentConfig({
-      env: {},
-      configPath: await writeConfig({ allowLocalFiles: "yes" }),
-    })).rejects.toThrow("config allowLocalFiles must be a boolean");
-
-    await expect(loadAgentConfig({
-      env: {},
-      configPath: await writeConfig({ thinking: "on" }),
-    })).rejects.toThrow("config thinking must be a boolean");
-
     await expect(loadAgentConfig({
       env: {},
       configPath: await writeConfig({ compactionThreshold: 1.5 }),
@@ -138,12 +189,16 @@ describe("agent config validation", () => {
     })).rejects.toThrow("config systemPrompt must be false or a non-empty path");
   });
 
-  it("ignores deprecated fields but rejects other unknown fields", async () => {
-    const deprecated = await loadAgentConfig({
+  it("rejects legacy flat fields", async () => {
+    await expect(loadAgentConfig({
       env: {},
-      configPath: await writeConfig({ maxTokens: 1_024, timeoutMs: 5_000 }),
-    });
-    expect(deprecated.config).toEqual({});
+      configPath: await writeConfig({ model: "legacy-model" }),
+    })).rejects.toThrow("config has unknown field: model");
+
+    await expect(loadAgentConfig({
+      env: {},
+      configPath: await writeConfig({ maxTokens: 1_024 }),
+    })).rejects.toThrow("config has unknown field: maxTokens");
 
     await expect(loadAgentConfig({
       env: {},
@@ -159,17 +214,47 @@ describe("agent config validation", () => {
     await mkdir(join(project, ".agents"), { recursive: true });
     await writeFile(join(home, ".agents", "myloop.json"), JSON.stringify({
       protocol: "openai-chat",
-      model: "global-model",
+      protocols: { "openai-chat": { model: "global-model" } },
     }));
     await writeFile(join(project, ".agents", "myloop.json"), JSON.stringify({
-      model: "project-model",
+      protocols: { "openai-chat": { model: "project-model" } },
     }));
 
     const { config, sources } = await loadAgentConfig({ env: {}, cwd: project, home });
 
-    expect(config).toEqual({ protocol: "openai-chat", model: "project-model" });
+    expect(config).toEqual({
+      protocol: "openai-chat",
+      protocols: { "openai-chat": { model: "project-model" } },
+    });
     expect(sources.global).toBe(join(home, ".agents", "myloop.json"));
     expect(sources.project).toBe(join(project, ".agents", "myloop.json"));
+  });
+
+  it("deep merges protocol-specific configs with the project winning", async () => {
+    const home = await mkdtemp(join(tmpdir(), "myloop-config-home-"));
+    const project = await mkdtemp(join(tmpdir(), "myloop-config-project-"));
+    temporaryDirectories.push(home, project);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await mkdir(join(project, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents", "myloop.json"), JSON.stringify({
+      protocols: {
+        anthropic: { thinking: true, thinkingBudgetTokens: 8_192 },
+        "openai-chat": { thinking: true },
+      },
+    }));
+    await writeFile(join(project, ".agents", "myloop.json"), JSON.stringify({
+      protocols: {
+        anthropic: { thinkingBudgetTokens: 4_096 },
+        "openai-chat": { reasoningEffort: "low" },
+      },
+    }));
+
+    const { config } = await loadAgentConfig({ env: {}, cwd: project, home });
+
+    expect(config.protocols).toEqual({
+      anthropic: { thinking: true, thinkingBudgetTokens: 4_096 },
+      "openai-chat": { thinking: true, reasoningEffort: "low" },
+    });
   });
 
   it("finds the project config in a parent directory", async () => {
@@ -178,11 +263,13 @@ describe("agent config validation", () => {
     const nested = join(root, "deep", "deeper");
     await mkdir(nested, { recursive: true });
     await mkdir(join(root, ".agents"), { recursive: true });
-    await writeFile(join(root, ".agents", "myloop.json"), JSON.stringify({ model: "root-model" }));
+    await writeFile(join(root, ".agents", "myloop.json"), JSON.stringify({
+      protocols: { anthropic: { model: "root-model" } },
+    }));
 
     const { config, sources } = await loadAgentConfig({ env: {}, cwd: nested, home: join(root, "no-home") });
 
-    expect(config.model).toBe("root-model");
+    expect(config.protocols?.anthropic?.model).toBe("root-model");
     expect(sources.project).toBe(join(root, ".agents", "myloop.json"));
     expect(sources.global).toBeUndefined();
   });

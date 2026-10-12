@@ -73,6 +73,51 @@ describe("createAppModelClient", () => {
     expect((client as Anthropic).maxTokens).toBe(8_192);
   });
 
+  it("propagates protocol-specific reasoning options", async () => {
+    const anthropicCapture = transportCapturingBody(() => jsonResponse({
+      content: [{ type: "text", text: "hi" }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }));
+    const anthropic = createAppModelClient({
+      protocol: "anthropic",
+      model: "claude-x",
+      thinking: true,
+      thinkingBudgetTokens: 8_192,
+      transport: anthropicCapture.transport,
+    });
+    await anthropic.complete(modelRequest());
+    expect(anthropicCapture.bodies[0]?.thinking).toEqual({ type: "enabled", budget_tokens: 8_192 });
+
+    const chatCapture = transportCapturingBody(() => jsonResponse({
+      choices: [{ message: { content: "hi" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    }));
+    const chat = createAppModelClient({
+      protocol: "openai-chat",
+      model: "gpt-x",
+      thinking: true,
+      reasoningEffort: "low",
+      transport: chatCapture.transport,
+    });
+    await chat.complete(modelRequest());
+    expect(chatCapture.bodies[0]?.reasoning_effort).toBe("low");
+
+    const responsesCapture = transportCapturingBody(() => jsonResponse({
+      output: [{ type: "message", content: [{ type: "output_text", text: "hi" }] }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }));
+    const responses = createAppModelClient({
+      protocol: "openai-responses",
+      model: "gpt-x",
+      thinking: true,
+      reasoningEffort: "low",
+      reasoningSummary: "concise",
+      transport: responsesCapture.transport,
+    });
+    await responses.complete(modelRequest());
+    expect(responsesCapture.bodies[0]?.reasoning).toEqual({ effort: "low", summary: "concise" });
+  });
+
   it("creates an OpenAI Chat client with defaults", () => {
     const client = createAppModelClient({
       protocol: "openai-chat",

@@ -1,19 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { formatCliHelp, parseCliArgs } from "../src/cli.js";
-import { formatInteractivePrompt } from "../src/main.js";
 
 describe("CLI arguments", () => {
   it("parses a one-shot task", () => {
     const options = parseCliArgs(["fix", "the tests"], {}, {
       protocol: "openai-chat",
-      model: "gpt-test",
-      allowLocalFiles: true,
+      protocols: { "openai-chat": { model: "gpt-test" } },
     });
 
     expect(options).toMatchObject({
       protocol: "openai-chat",
       model: "gpt-test",
-      allowLocalFiles: true,
       prompt: "fix the tests",
       help: false,
       log: "events",
@@ -27,10 +24,13 @@ describe("CLI arguments", () => {
       "./cli.md",
     ], {}, {
       protocol: "openai-chat",
-      model: "gpt-test",
-      apiKey: "config-key",
-      baseURL: "https://example.com/v1",
-      allowLocalFiles: true,
+      protocols: {
+        "openai-chat": {
+          model: "gpt-test",
+          apiKey: "config-key",
+          baseURL: "https://example.com/v1",
+        },
+      },
       sessionId: "work-1",
       systemPrompt: "./config.md",
     });
@@ -40,22 +40,86 @@ describe("CLI arguments", () => {
       model: "gpt-test",
       apiKey: "config-key",
       baseURL: "https://example.com/v1",
-      allowLocalFiles: true,
       sessionId: "work-1",
       systemPrompt: "./cli.md",
       systemPromptEnabled: true,
     });
   });
 
+  it("selects protocol-specific thinking settings", () => {
+    const protocolOptions = parseCliArgs(["task"], {}, {
+      protocol: "anthropic",
+      protocols: {
+        anthropic: { model: "claude-test", thinking: true, thinkingBudgetTokens: 8_192 },
+        "openai-responses": { reasoningSummary: "concise" },
+      },
+    });
+
+    expect(protocolOptions).toMatchObject({
+      thinking: true,
+      thinkingBudgetTokens: 8_192,
+      reasoningEffort: undefined,
+      reasoningSummary: undefined,
+    });
+
+    const openAiOptions = parseCliArgs(["task"], {}, {
+      protocol: "openai-responses",
+      protocols: {
+        "openai-responses": {
+          model: "gpt-responses-test",
+          thinking: true,
+          reasoningEffort: "low",
+          reasoningSummary: "concise",
+        },
+      },
+    });
+
+    expect(openAiOptions).toMatchObject({
+      thinking: true,
+      reasoningEffort: "low",
+      reasoningSummary: "concise",
+    });
+
+    expect(parseCliArgs(["task"], {}, {
+      protocol: "openai-chat",
+      protocols: { "openai-chat": { model: "gpt-test" } },
+    }).thinking).toBe(false);
+  });
+
+  it("selects protocol-specific connection settings", () => {
+    const options = parseCliArgs(["task"], {
+      ANTHROPIC_MODEL: "environment-model",
+    }, {
+      protocol: "anthropic",
+      protocols: {
+        anthropic: {
+          model: "protocol-model",
+          apiKey: "protocol-key",
+          baseURL: "https://protocol.example.com/v1",
+        },
+      },
+    });
+
+    expect(options).toMatchObject({
+      model: "protocol-model",
+      apiKey: "protocol-key",
+      baseURL: "https://protocol.example.com/v1",
+    });
+  });
+
   it("can hide prompt declarations", () => {
-    const options = parseCliArgs(["--no-print-prompts", "task"], {}, { model: "gpt-test" });
+    const options = parseCliArgs(["--no-print-prompts", "task"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    });
 
     expect(options.printPrompts).toBe(false);
   });
 
   it("parses bot mode and forwards heartbeat config", () => {
     const options = parseCliArgs(["--bot", "task"], {}, {
-      model: "gpt-test",
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
       heartbeat: { intervalMs: 250 },
       botPrompt: "keep going",
     });
@@ -66,7 +130,10 @@ describe("CLI arguments", () => {
       heartbeatIntervalMs: 250,
       botPrompt: "keep going",
     });
-    expect(parseCliArgs(["task"], {}, { model: "gpt-test" }).bot).toBe(false);
+    expect(parseCliArgs(["task"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    }).bot).toBe(false);
   });
 
   it("parses list-sessions without requiring a model", () => {
@@ -77,12 +144,22 @@ describe("CLI arguments", () => {
   });
 
   it("parses continue-last-session and rejects conflicting ids", () => {
-    const options = parseCliArgs(["--continue", "task"], {}, { model: "gpt-test" });
-    const shortOptions = parseCliArgs(["-c"], {}, { model: "gpt-test", sessionId: "config" });
+    const options = parseCliArgs(["--continue", "task"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    });
+    const shortOptions = parseCliArgs(["-c"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+      sessionId: "config",
+    });
 
     expect(options).toMatchObject({ continueLastSession: true, sessionId: undefined, prompt: "task" });
     expect(shortOptions).toMatchObject({ continueLastSession: true, sessionId: undefined });
-    expect(() => parseCliArgs(["--session-id", "work-1", "--continue"], {}, { model: "gpt-test" }))
+    expect(() => parseCliArgs(["--session-id", "work-1", "--continue"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    }))
       .toThrow("--continue cannot be used with --session-id");
   });
 
@@ -90,7 +167,7 @@ describe("CLI arguments", () => {
   it("uses config values when command-line options are omitted", () => {
     const options = parseCliArgs([], {}, {
       protocol: "anthropic",
-      model: "claude-config",
+      protocols: { anthropic: { model: "claude-config" } },
       systemPrompt: false,
     });
 
@@ -121,24 +198,29 @@ describe("CLI arguments", () => {
   });
 
   it("rejects unknown arguments", () => {
-    expect(parseCliArgs(["--log=errors"], {}, { model: "gpt-test" }).log).toBe("errors");
-    expect(parseCliArgs(["--log", "events", "task"], {}, { model: "gpt-test" }).log).toBe("events");
-    expect(parseCliArgs(["--log", "task"], {}, { model: "gpt-test" }).log).toBe("events");
-    expect(parseCliArgs(["--log", "task"], {}, { model: "gpt-test" }).prompt).toBe("task");
-    expect(() => parseCliArgs(["--log=verbose"], {}, { model: "gpt-test" }))
+    expect(parseCliArgs(["--log=errors"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    }).log).toBe("errors");
+    expect(parseCliArgs(["--log", "events", "task"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    }).log).toBe("events");
+    expect(parseCliArgs(["--log", "task"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    }).log).toBe("events");
+    expect(parseCliArgs(["--log", "task"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    }).prompt).toBe("task");
+    expect(() => parseCliArgs(["--log=verbose"], {}, {
+      protocol: "anthropic",
+      protocols: { anthropic: { model: "gpt-test" } },
+    }))
       .toThrow("log level must be one of");
     expect(() => parseCliArgs(["--unknown"]))
       .toThrow("unknown argument: --unknown");
     expect(() => parseCliArgs([], {})).toThrow("model is required");
-  });
-});
-
-describe("interactive prompt", () => {
-  it("abbreviates the home directory", () => {
-    expect(formatInteractivePrompt("/Users/dev/projects/myloop", "/Users/dev")).toBe("~/projects/myloop ❯ ");
-  });
-
-  it("uses the original directory outside home", () => {
-    expect(formatInteractivePrompt("/var/log", "/Users/dev")).toBe("/var/log ❯ ");
   });
 });

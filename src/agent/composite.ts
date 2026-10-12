@@ -205,7 +205,7 @@ function renderCoordinatorInput({
       .join("\n");
   const latestOutputs = latestDelegations === undefined || latestDelegations.length === 0
     ? ""
-    : `\nLatest worker outputs:\n${latestDelegations
+    : `\n## Latest worker outputs\n${latestDelegations
       .map((delegation) => `[${delegation.worker}]\n${delegation.output}`)
       .join("\n\n")}`;
   const remainingDelegations = maxDelegations - delegations.length;
@@ -217,14 +217,14 @@ function renderCoordinatorInput({
     .trim();
 
   const instruction = `
-Task:
+## Task
 ${taskText || "See attached user content."}
-Workers:
+## Workers
 ${workerList}
 
 Remaining delegation budget: ${remainingDelegations}
 
-Previous delegations:
+## Previous delegations
 ${delegationList}
 ${latestOutputs}
 

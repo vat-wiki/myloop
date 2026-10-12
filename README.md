@@ -396,7 +396,6 @@ const agent = new SingleAgent({
   name: "multimodal-agent",
   modelClient,
   input: {
-    allowLocalFiles: true,
     allowRemoteUrls: true,
     maxLocalFileBytes: 20 * 1024 * 1024,
     maxTotalInputBytes: 20 * 1024 * 1024,

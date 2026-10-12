@@ -10,7 +10,6 @@ export type CliOptions = {
   model: string;
   apiKey?: string;
   baseURL?: string;
-  allowLocalFiles: boolean;
   compactionThreshold?: number;
   sessionId?: string;
   continueLastSession: boolean;
@@ -19,6 +18,9 @@ export type CliOptions = {
   printPrompts: boolean;
   listSessions: boolean;
   thinking: boolean;
+  thinkingBudgetTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+  reasoningSummary?: "auto" | "concise" | "detailed";
   heartbeatIntervalMs?: number;
   bot: boolean;
   botPrompt?: string;
@@ -126,7 +128,8 @@ export function parseCliArgs(
   const selectedProtocol = config.protocol ?? (
     env.ANTHROPIC_API_KEY ? "anthropic" : "openai-chat"
   );
-  const selectedModel = config.model ?? (
+  const selectedProtocolConfig = config.protocols?.[selectedProtocol];
+  const selectedModel = selectedProtocolConfig?.model ?? (
     selectedProtocol === "anthropic" ? env.ANTHROPIC_MODEL : env.OPENAI_MODEL
   );
   if (!selectedModel && !help && !listSessions) {
@@ -139,9 +142,8 @@ export function parseCliArgs(
   return {
     protocol: selectedProtocol,
     model: selectedModel ?? "",
-    apiKey: config.apiKey,
-    baseURL: config.baseURL,
-    allowLocalFiles: config.allowLocalFiles ?? false,
+    apiKey: selectedProtocolConfig?.apiKey,
+    baseURL: selectedProtocolConfig?.baseURL,
     compactionThreshold: config.compactionThreshold,
     sessionId: continueLastSession ? undefined : sessionId ?? config.sessionId,
     continueLastSession,
@@ -151,7 +153,10 @@ export function parseCliArgs(
     systemPromptEnabled: systemPromptEnabled && (systemPrompt !== undefined || config.systemPrompt !== false),
     printPrompts,
     listSessions,
-    thinking: config.thinking ?? false,
+    thinking: selectedProtocolConfig?.thinking ?? false,
+    thinkingBudgetTokens: config.protocols?.anthropic?.thinkingBudgetTokens,
+    reasoningEffort: selectedProtocol === "anthropic" ? undefined : config.protocols?.[selectedProtocol]?.reasoningEffort,
+    reasoningSummary: selectedProtocol === "openai-responses" ? config.protocols?.["openai-responses"]?.reasoningSummary : undefined,
     heartbeatIntervalMs: config.heartbeat?.intervalMs,
     bot,
     botPrompt: config.botPrompt,

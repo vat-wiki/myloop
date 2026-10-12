@@ -117,6 +117,7 @@ class OpenAIChat {
         model: this.model,
         messages: mappedMessages,
         ...(this.maxTokens ? { max_completion_tokens: this.maxTokens } : {}),
+        ...(this.#options.reasoningEffort ? { reasoning_effort: this.#options.reasoningEffort } : {}),
         ...(tools.length === 0 ? {} : {
           tools: tools.map(toOpenAIChatTool),
           tool_choice: "auto",
