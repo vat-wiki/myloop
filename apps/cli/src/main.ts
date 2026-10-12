@@ -17,6 +17,7 @@ import {
 } from "./run.js";
 import { createCliSessionId, FileSessionStore } from "./session.js";
 import { createBotHost } from "./bot/host.js";
+import type { UnreadMessage } from "./bot/drives.js";
 import { DriveArbiter } from "./bot/arbiter.js";
 import { Memory, renderMemorySection } from "./memory/memory.js";
 
@@ -180,7 +181,7 @@ export async function runBotLoop({
   const redraw = (): void => {
     if (!agent.running) readline.prompt();
   };
-  const pendingUnread: Array<{ text: string; at: number }> = [];
+  const pendingUnread: UnreadMessage[] = [];
   const memory = new Memory({ cwd: process.cwd(), home: process.env.HOME });
   memory.ensureScaffold();
   const host = createBotHost({
@@ -249,7 +250,7 @@ export async function runBotLoop({
       process.stderr.write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
     } else if (input) {
       if (agent.running) {
-        pendingUnread.push({ text: input, at: Date.now() });
+        pendingUnread.push({ text: input, at: Date.now(), source: "user" });
         process.stderr.write("(agent busy — queued as unread)\n");
       } else {
         await submit(input);

@@ -10,7 +10,12 @@ import {
 const NOW = 1_000_000;
 
 type DemoWorld = UnreadSenses & HealthSenses & IdleSenses;
-type UnreadSenses = { now: number; unreadCount: number; oldestUnreadAt?: number };
+type UnreadSenses = {
+  now: number;
+  unreadCount: number;
+  oldestUnreadAt?: number;
+  unreadMessages?: ReadonlyArray<{ text: string; at: number; source: "user" | "ambient" }>;
+};
 type HealthSenses = { failedHealthChecks: number };
 type IdleSenses = { now: number; lastActionAt?: number };
 
@@ -30,6 +35,43 @@ describe("respondUnreadDrive", () => {
     expect(staleMany?.pressure).toBe(1);
     expect(staleMany?.pressure).toBeGreaterThan(freshFew?.pressure ?? 0);
     expect(staleMany?.prompt).toContain("5");
+  });
+
+  it("prompt distinguishes user-assigned from ambient messages", () => {
+    const drive = respondUnreadDrive<DemoWorld>();
+    const outcome = drive.evaluate({
+      now: NOW,
+      unreadCount: 2,
+      oldestUnreadAt: NOW - 60_000,
+      unreadMessages: [
+        { text: "把报告发我", at: NOW - 60_000, source: "user" },
+        { text: "服务 ping 失败", at: NOW - 30_000, source: "ambient" },
+      ],
+      failedHealthChecks: 0,
+    });
+    expect(outcome?.pressure).toBe(1);
+    expect(outcome?.prompt).toContain("[用户交办] 把报告发我");
+    expect(outcome?.prompt).toContain("[环境] 服务 ping 失败");
+    expect(outcome?.prompt).toContain("先逐条回应用户交办");
+  });
+
+  it("a single queued user message fires immediately without waiting for pressure buildup", () => {
+    const drive = respondUnreadDrive<DemoWorld>();
+    const outcome = drive.evaluate({
+      now: NOW,
+      unreadCount: 1,
+      oldestUnreadAt: NOW,
+      unreadMessages: [{ text: "插队交办", at: NOW, source: "user" }],
+      failedHealthChecks: 0,
+    });
+    expect(outcome?.pressure).toBe(1);
+  });
+
+  it("prompt falls back to count-only when host provides no message details", () => {
+    const drive = respondUnreadDrive<DemoWorld>();
+    const outcome = drive.evaluate({ now: NOW, unreadCount: 2, oldestUnreadAt: NOW - 60_000, failedHealthChecks: 0 });
+    expect(outcome?.prompt).toContain("2 条未读积压");
+    expect(outcome?.prompt).not.toContain("[用户交办]");
   });
 });
 

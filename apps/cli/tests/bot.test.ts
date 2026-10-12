@@ -61,7 +61,7 @@ async function settle(): Promise<void> {
 describe("createBotHost", () => {
   it("builds a world snapshot from unread queue and probes", () => {
     const harness = createBotAgent();
-    const pending = [{ text: "hello", at: 1_000 }];
+    const pending = [{ text: "hello", at: 1_000, source: "user" as const }];
     const { deps } = createBotHost({
       agent: harness.agent,
       color: false,
@@ -76,6 +76,7 @@ describe("createBotHost", () => {
       tick: 3,
       unreadCount: 1,
       oldestUnreadAt: 1_000,
+      unreadMessages: pending,
       failedHealthChecks: 1,
     });
   });

@@ -6,6 +6,7 @@ import {
   selfMaintenanceDrive,
   memoryGroomingDrive,
   type Drive,
+  type UnreadMessage,
 } from "./drives.js";
 import type { MemorySenses } from "../memory/memory.js";
 import { runTask } from "../run.js";
@@ -16,6 +17,7 @@ export type CliWorld = {
   tick: number;
   unreadCount: number;
   oldestUnreadAt?: number;
+  unreadMessages: ReadonlyArray<UnreadMessage>;
   lastActionAt?: number;
   failedHealthChecks: number;
   pendingLines: number;
@@ -28,7 +30,7 @@ export type BotHostOptions = {
   color: boolean;
   width?: number;
   /** bot 模式下 readline 收到、因 agent 忙而未处理的用户输入 */
-  unread: () => Array<{ text: string; at: number }>;
+  unread: () => ReadonlyArray<UnreadMessage>;
   /** act 成功后由宿主回写，供 self-maintenance 计算空闲 */
   markAction?: (at: number) => void;
   probes?: Array<() => boolean>;
@@ -70,6 +72,7 @@ export function createBotHost(options: BotHostOptions): {
         tick,
         unreadCount: pending.length,
         oldestUnreadAt: pending[0]?.at,
+        unreadMessages: [...pending],
         lastActionAt: lastActionAt,
         failedHealthChecks: probes.filter((probe) => !probe()).length,
         pendingLines: memory?.pendingLines ?? 0,

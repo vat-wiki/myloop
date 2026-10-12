@@ -31,6 +31,15 @@ export type UnreadSenses = {
   now: number;
   unreadCount: number;
   oldestUnreadAt?: number;
+  /** 未读明细（可选：宿主没给明细时 prompt 退化为纯计数） */
+  unreadMessages?: ReadonlyArray<UnreadMessage>;
+};
+
+export type UnreadMessage = {
+  text: string;
+  at: number;
+  /** user = 用户当面交办；ambient = 环境/外部消息 */
+  source: "user" | "ambient";
 };
 
 export type HealthSenses = {
@@ -61,14 +70,35 @@ export function respondUnreadDrive<W extends UnreadSenses>(options?: {
     name: "respond-unread",
     threshold: options?.threshold ?? 0.5,
     cooldownMs: options?.cooldownMs ?? 30_000,
-    evaluate: ({ unreadCount, oldestUnreadAt, now }) => {
+    evaluate: ({ unreadCount, oldestUnreadAt, unreadMessages, now }) => {
       if (unreadCount <= 0) return null;
+      const messages = unreadMessages ?? [];
+      const userMsgs = messages.filter((m) => m.source === "user");
+      const ambientMsgs = messages.filter((m) => m.source === "ambient");
+      // 用户交办是必须做而非想做的：不被痛阈过滤（否则单条要熬满 count×age 才触发），
+      // 下一 tick 即行动；ambient 保持数量×等待的渐变。
+      if (userMsgs.length > 0) {
+        return {
+          pressure: 1,
+          prompt: [
+            `${unreadCount} 条未读积压，逐条处理：`,
+            ...userMsgs.map((m) => `- [用户交办] ${m.text}`),
+            ...ambientMsgs.map((m) => `- [环境] ${m.text}`),
+            "先逐条回应用户交办（原话见上），再处理其余环境消息。",
+          ].join("\n"),
+        };
+      }
       const age = oldestUnreadAt === undefined ? 0 : Math.max(0, now - oldestUnreadAt);
       const pressure = clamp01(unreadCount / unreadQuota) * clamp01(age / patienceMs);
       if (pressure <= 0) return null;
+      const lines = [
+        `${unreadCount} 条未读积压，逐条处理：`,
+        ...ambientMsgs.map((m) => `- [环境] ${m.text}`),
+        "逐条阅读并回复最重要的问题。",
+      ];
       return {
         pressure,
-        prompt: `${unreadCount} 条未读消息积压，逐条阅读并回复最重要的问题。`,
+        prompt: lines.join("\n"),
       };
     },
   };
