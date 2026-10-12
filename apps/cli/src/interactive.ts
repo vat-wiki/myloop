@@ -14,6 +14,8 @@ const CONTINUATION_SUFFIX = "\\";
 
 export function createInteractiveLoop({ agent, submit, write, onPromptChange, onIdle, onEscape }: InteractiveLoopOptions): {
   handleLine: (rawLine: string) => void;
+  handlePasteStart: () => void;
+  handlePasteEnd: (tail?: string) => void;
   handleEscape: () => void;
   interrupt: () => void;
   isStopped: () => boolean;
@@ -23,11 +25,18 @@ export function createInteractiveLoop({ agent, submit, write, onPromptChange, on
   let continuation: Array<string> | undefined;
   let pending: Promise<void> = Promise.resolve();
   let stopped = false;
+  let pasteLines: Array<string> | undefined;
 
   const stopContinuation = (): void => {
     if (continuation === undefined) return;
     continuation = undefined;
     onPromptChange?.(false);
+  };
+
+  const stopPaste = (): void => {
+    if (pasteLines === undefined) return;
+    pasteLines = undefined;
+    if (continuation === undefined) onPromptChange?.(false);
   };
 
   async function run(input: string): Promise<void> {
@@ -44,49 +53,75 @@ export function createInteractiveLoop({ agent, submit, write, onPromptChange, on
     if (!stopped) onIdle?.();
   }
 
-  return {
-    handleLine(rawLine: string): void {
-      const input = rawLine.trim();
-      const continuing = continuation !== undefined;
-      if (!input && !continuing) return;
-      if (EXIT_COMMANDS.has(input)) {
-        stopped = true;
-        stopContinuation();
-        return;
-      }
-      if (input === "/help") {
-        write("Commands: /exit · /cancel multiline · trailing \\ continues · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
-        return;
-      }
-      if (input === "/cancel") {
-        if (continuing) {
-          stopContinuation();
-          write("multiline input cancelled\n");
-        }
-        return;
-      }
-      if (agent.running) {
-        write("agent is running — press Esc to interrupt\n");
-        return;
-      }
-      const endsWithContinuation = input.endsWith(CONTINUATION_SUFFIX);
-      const line = endsWithContinuation ? input.slice(0, -CONTINUATION_SUFFIX.length) : input;
-      if (continuation === undefined) {
-        if (!endsWithContinuation) {
-          pending = run(input).catch(() => {});
-          return;
-        }
-        continuation = [line];
-        onPromptChange?.(true);
-        return;
-      }
-      continuation.push(line);
-      if (endsWithContinuation) return;
-      const multilineInput = continuation.join("\n");
+  const handleLine = (rawLine: string): void => {
+    if (pasteLines !== undefined) {
+      pasteLines.push(rawLine);
+      return;
+    }
+    const input = rawLine.trim();
+    const continuing = continuation !== undefined;
+    if (!input && !continuing) return;
+    if (EXIT_COMMANDS.has(input)) {
+      stopped = true;
       stopContinuation();
-      pending = run(multilineInput).catch(() => {});
+      return;
+    }
+    if (input === "/help") {
+      write("Commands: /exit · /cancel multiline · trailing \\ continues · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
+      return;
+    }
+    if (input === "/cancel") {
+      if (continuing) {
+        stopContinuation();
+        write("multiline input cancelled\n");
+      }
+      return;
+    }
+    if (agent.running) {
+      write("agent is running — press Esc to interrupt\n");
+      return;
+    }
+    const endsWithContinuation = input.endsWith(CONTINUATION_SUFFIX);
+    const line = endsWithContinuation ? input.slice(0, -CONTINUATION_SUFFIX.length) : input;
+    if (continuation === undefined) {
+      if (!endsWithContinuation) {
+        pending = run(input).catch(() => {});
+        return;
+      }
+      continuation = [line];
+      onPromptChange?.(true);
+      return;
+    }
+    continuation.push(line);
+    if (endsWithContinuation) return;
+    const multilineInput = continuation.join("\n");
+    stopContinuation();
+    pending = run(multilineInput).catch(() => {});
+  };
+
+  return {
+    handleLine,
+    handlePasteStart(): void {
+      if (pasteLines !== undefined) return;
+      pasteLines = [];
+      onPromptChange?.(true);
+    },
+    handlePasteEnd(tail?: string): void {
+      const lines = pasteLines;
+      stopPaste();
+      if (lines === undefined) return;
+      const all = tail ? [...lines, tail] : lines;
+      const input = all.join("\n").replace(/\r/g, "").trim();
+      if (!input) return;
+      handleLine(input);
     },
     handleEscape(): void {
+      if (pasteLines !== undefined || continuation !== undefined) {
+        stopPaste();
+        stopContinuation();
+        write("multiline input cancelled\n");
+        return;
+      }
       if (!agent.running) {
         return;
       }

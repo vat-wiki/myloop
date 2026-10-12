@@ -126,6 +126,41 @@ describe("interactive loop", () => {
     expect(loop.isStopped()).toBe(true);
   });
 
+  it("buffers pasted lines and submits them as one message on paste end", async () => {
+    const loop = createLoop(createAgent());
+    loop.handlePasteStart();
+    loop.handleLine("first");
+    loop.handleLine("second");
+    loop.handlePasteEnd();
+    await loop.drain();
+
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith("first\nsecond");
+    expect(loop.isContinuing()).toBe(false);
+  });
+
+  it("ignores empty pastes", async () => {
+    const loop = createLoop(createAgent());
+    loop.handlePasteStart();
+    loop.handleLine("   ");
+    loop.handlePasteEnd();
+    await loop.drain();
+
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("cancels paste on escape", async () => {
+    const loop = createLoop(createAgent());
+    loop.handlePasteStart();
+    loop.handleLine("half");
+    loop.handleEscape();
+    loop.handlePasteEnd();
+    await loop.drain();
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(output).toContainEqual("multiline input cancelled\n");
+  });
+
   it("aborts a running agent on escape", () => {
     const agent = createAgent({ running: true });
     const onEscape = vi.fn();

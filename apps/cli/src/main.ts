@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import process from "node:process";
-import { createInterface } from "node:readline/promises";
+import { once } from "node:events";
+import { createInterface, type Interface } from "node:readline/promises";
 import type { SingleAgent } from "myloop/agent";
 import { createAppAgent, loadAppSkills, type AppSessionSummary } from "@myloop/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
@@ -173,6 +174,13 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 
 type CliWorldShape = import("./bot/host.js").CliWorld;
 
+/** 粘贴结束后 readline 缓冲里残留的未换行尾部：吸出并交给 paste 批次 */
+function drainReadlineTail(readline: Interface): string {
+  const tail = readline.line;
+  for (let i = 0; i < tail.length; i += 1) readline.write(null, { name: "backspace" });
+  return tail;
+}
+
 export async function runBotLoop({
   agent,
   heartbeatIntervalMs,
@@ -252,6 +260,15 @@ export async function runBotLoop({
   const wasRaw = process.stdin.isRaw ?? false;
   process.stdin.setRawMode?.(true);
   const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }): void => {
+    if (key?.name === "paste-start") {
+      lineBatch = [];
+      return;
+    }
+    if (key?.name === "paste-end") {
+      // 无结尾换行的最后一行留在 readline 缓冲里，paste-end 时吸出并入批次
+      lineBatch.push(drainReadlineTail(readline));
+      return;
+    }
     if (key?.name === "escape" && !key.ctrl && agent.running) {
       agent.abort(new Error("interrupted"));
     }
@@ -259,22 +276,36 @@ export async function runBotLoop({
   process.stdin.on("keypress", onKeypress);
 
   const submit = createBotSubmit({ agent, color, width, out });
+  let lineBatch: Array<string> = [];
+  let lineBatchFlushScheduled = false;
   readline.prompt();
   for await (const line of readline) {
-    const input = String(line).trim();
-    if (input === "/exit" || input === "/quit") botStopped = true;
-    else if (input === "/help") {
-      out.write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits");
-    } else if (input) {
-      if (agent.running) {
-        pendingUnread.push({ text: input, at: Date.now(), source: "user" });
-        out.write("(agent busy — queued as unread)");
-      } else {
-        await submit(input);
+    // 粘贴的多行文本会在同一次 flush 里连续到达：合批为一条消息，避免逐行拆散
+    lineBatch.push(String(line));
+    if (lineBatchFlushScheduled) continue;
+    lineBatchFlushScheduled = true;
+    setImmediate(() => {
+      lineBatchFlushScheduled = false;
+      const input = lineBatch.map((l) => l.replace(/\r$/, "")).join("\n").trim();
+      lineBatch = [];
+      if (input === "/exit" || input === "/quit") botStopped = true;
+      else if (input === "/help") {
+        out.write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits");
+      } else if (input) {
+        if (agent.running) {
+          pendingUnread.push({ text: input, at: Date.now(), source: "user" });
+          out.write("(agent busy — queued as unread)");
+        } else {
+          void submit(input)
+            .catch(() => {})
+            .finally(() => {
+              if (!botStopped && !agent.running) readline.prompt();
+            });
+        }
       }
-    }
-    if (botStopped) break;
-    readline.prompt();
+      if (botStopped) readline.close();
+      else readline.prompt();
+    });
   }
 
   process.stdin.setRawMode?.(wasRaw);
@@ -403,15 +434,26 @@ async function runInteractive({
   const wasRaw = process.stdin.isRaw ?? false;
   process.stdin.setRawMode?.(true);
   const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }): void => {
+    if (key?.name === "paste-start") {
+      loop.handlePasteStart();
+      return;
+    }
+    if (key?.name === "paste-end") {
+      loop.handlePasteEnd(drainReadlineTail(readline));
+      return;
+    }
     if (key?.name === "escape" && !key.ctrl) {
       loop.handleEscape();
     }
   };
   process.stdin.on("keypress", onKeypress);
-  for await (const line of readline) {
+  // line 监听必须同步：粘贴 chunk 内 keypress(paste) 与 line 事件同步到达，
+  // for-await 会把处理推迟到微任务，导致 paste-end 先于缓冲行执行
+  readline.on("line", (line) => {
     loop.handleLine(String(line));
-    if (loop.isStopped()) break;
-  }
+    if (loop.isStopped()) readline.close();
+  });
+  await once(readline, "close");
   out.detach();
   process.stdin.setRawMode?.(wasRaw);
   process.stdin.off("keypress", onKeypress);
