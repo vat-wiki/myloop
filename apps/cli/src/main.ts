@@ -91,7 +91,7 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
         systemPrompt,
         agentsInstructions,
         skills,
-        memorySection: options.bot ? renderMemorySection({ dir: memory.dir, index: memory.readIndex() }) : "",
+        memorySection: renderMemorySection({ dir: memory.dir, index: memory.readIndex() }),
       }),
       logger: options.log,
       sessionId: options.sessionId ?? createCliSessionId(),
