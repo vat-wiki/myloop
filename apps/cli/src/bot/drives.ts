@@ -42,7 +42,7 @@ export type IdleSenses = {
   lastActionAt?: number;
 };
 
-/** 记忆库的健康感官：来源见 src/memory/memory.ts 的 Memory.senses() */
+/** 记忆库的健康感官：来源见 apps/cli/src/memory/memory.ts 的 Memory.senses() */
 export type MemoryHealthSenses = {
   pendingLines: number;
   brokenLinkCount: number;
