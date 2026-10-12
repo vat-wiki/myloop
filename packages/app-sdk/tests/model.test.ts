@@ -51,15 +51,26 @@ describe("createAppModelClient", () => {
     expect(client.context?.reservedOutputTokens).toBe(1_024);
   });
 
-  it("applies the default Anthropic thinking budget of 4096", () => {
+  it("scales the Anthropic thinking budget with the default output budget", () => {
     const client = createAppModelClient({
       protocol: "anthropic",
       model: "claude-x",
       thinking: true,
     });
 
-    expect((client as Anthropic).maxTokens).toBe(8192);
-    expect(client.context?.reservedOutputTokens).toBe(8192);
+    expect((client as Anthropic).maxTokens).toBe(131_072);
+    expect(client.context?.reservedOutputTokens).toBe(131_072);
+  });
+
+  it("keeps an explicit small thinking budget under a small maxTokens", () => {
+    const client = createAppModelClient({
+      protocol: "anthropic",
+      model: "claude-x",
+      maxTokens: 8_192,
+      thinking: true,
+    });
+
+    expect((client as Anthropic).maxTokens).toBe(8_192);
   });
 
   it("creates an OpenAI Chat client with defaults", () => {

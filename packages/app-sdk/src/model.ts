@@ -29,12 +29,17 @@ export function createAppModelClient(options: CreateAppModelClientOptions): Mode
   };
 
   if (options.protocol === "anthropic") {
+    // 思考预算随总预算缩放：保底 4k（预算小时），否则留 8k 行动余量，剩余全给思考。
+    const maxTokens = options.maxTokens ?? 131_072;
+    const thinkingBudgetTokens = options.thinking
+      ? options.thinkingBudgetTokens ?? Math.max(4_096, maxTokens - 8_192)
+      : undefined;
     return new Anthropic({
       ...httpOptions,
       model: options.model,
-      maxTokens: options.maxTokens,
+      maxTokens,
       contextWindowTokens: options.contextWindowTokens,
-      thinkingBudgetTokens: options.thinking ? options.thinkingBudgetTokens ?? 4_096 : undefined,
+      thinkingBudgetTokens,
     });
   }
   if (options.protocol === "openai-chat") {

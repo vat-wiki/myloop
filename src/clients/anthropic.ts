@@ -141,7 +141,7 @@ class Anthropic {
     apiKey,
     baseURL,
     model,
-    maxTokens = 8192,
+    maxTokens = 131_072,
     contextWindowTokens,
     artifactStore,
     ...httpOptions

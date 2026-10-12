@@ -335,8 +335,13 @@ class AgentRuntime {
         }
 
         outputContinuations += 1;
+        // 截断发生在思考中时，"继续写"会让模型接着滚思考；
+        // 应让它收束思考、立即给出正文或工具调用。
+        const truncatedMidThinking = response.content.some((block) => block.type === "thinking");
         const continuationMessage = createUserMessage([textBlock(
-          "Continue from where the previous response stopped. Do not repeat content.",
+          truncatedMidThinking
+            ? "Your thinking was cut off by the output limit. Do not continue thinking. Wrap up immediately: state your conclusion or issue a tool call now."
+            : "Continue from where the previous response stopped. Do not repeat content.",
         )]);
         this.messages.push(continuationMessage);
         this.#events.emit("message", { message: continuationMessage });
