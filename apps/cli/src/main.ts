@@ -7,7 +7,7 @@ import type { SingleAgent } from "myloop/agent";
 import { createAppAgent, loadAppSkills, type AppSessionSummary } from "@myloop/app-sdk";
 import { formatCliHelp, loadAgentConfig, parseCliArgs, type CliOptions } from "./cli.js";
 import { createInteractiveLoop } from "./interactive.js";
-import { createSpinner } from "./spinner.js";
+import { createLineOutput, createReadlineSpinner } from "./line-output.js";
 import { composeCliSystem, loadAgentsInstructions, loadSystemPrompt } from "./prompt.js";
 import {
   printAgentPrompts,
@@ -177,6 +177,7 @@ export async function runBotLoop({
   width?: number;
 }): Promise<number> {
   let botStopped = false;
+  const out = createLineOutput(process.stdout);
 
   const redraw = (): void => {
     if (!agent.running) readline.prompt();
@@ -194,11 +195,11 @@ export async function runBotLoop({
   const arbiter = new DriveArbiter<CliWorldShape>({
     drives: [...host.drives],
     onSkip: (reason) => {
-      process.stderr.write(`  (tick skipped: ${reason})\n`);
+      out.write(`  (tick skipped: ${reason})`);
     },
     onEvaluated: (evaluations) => {
-      process.stderr.write(
-        `  (drives: ${evaluations.map((e) => `${e.drive.name}=${e.outcome ? e.outcome.pressure.toFixed(2) : "idle"}${e.passed ? "*" : ""}`).join(" ")})\n`,
+      out.write(
+        `  (drives: ${evaluations.map((e) => `${e.drive.name}=${e.outcome ? e.outcome.pressure.toFixed(2) : "idle"}${e.passed ? "*" : ""}`).join(" ")})`,
       );
     },
   });
@@ -213,7 +214,7 @@ export async function runBotLoop({
       .then(redraw);
   });
   agent.startHeartbeat();
-  process.stderr.write(
+  out.write(
     `bot mode started (heartbeat interval: ${heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS}ms, drives: ${host.drives.map((d) => d.name).join(", ")})\n`,
   );
 
@@ -232,6 +233,8 @@ export async function runBotLoop({
     readline.close();
   });
 
+  out.attach(readline);
+
   const wasRaw = process.stdin.isRaw ?? false;
   process.stdin.setRawMode?.(true);
   const onKeypress = (_char: string, key: { name?: string; ctrl?: boolean }): void => {
@@ -241,17 +244,17 @@ export async function runBotLoop({
   };
   process.stdin.on("keypress", onKeypress);
 
-  const submit = createBotSubmit({ agent, color, width });
+  const submit = createBotSubmit({ agent, color, width, out });
   readline.prompt();
   for await (const line of readline) {
     const input = String(line).trim();
     if (input === "/exit" || input === "/quit") botStopped = true;
     else if (input === "/help") {
-      process.stderr.write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits\n");
+      out.write("Commands: /exit · Esc interrupts · Ctrl+C interrupts, second Ctrl+C exits");
     } else if (input) {
       if (agent.running) {
         pendingUnread.push({ text: input, at: Date.now(), source: "user" });
-        process.stderr.write("(agent busy — queued as unread)\n");
+        out.write("(agent busy — queued as unread)");
       } else {
         await submit(input);
       }
@@ -267,7 +270,8 @@ export async function runBotLoop({
   offHeartbeat();
   agent.stopHeartbeat();
   if (agent.running) agent.abort(new Error("bot stopped"));
-  process.stderr.write("\nbot mode stopped\n");
+  out.detach();
+  out.write("\nbot mode stopped\n");
   return 0;
 }
 
@@ -275,23 +279,25 @@ function createBotSubmit({
   agent,
   color,
   width,
+  out,
 }: {
   agent: SingleAgent;
   color: boolean;
   width?: number;
+  out: ReturnType<typeof createLineOutput>;
 }): (input: string) => Promise<void> {
   return async (input) => {
     if (agent.running) {
-      process.stderr.write("agent is running\n");
+      out.write("agent is running");
       return;
     }
     await runTask({
       agent,
       input,
       saveSession: () => agent.saveSession(),
-      output: process.stdout,
-      status: (message) => process.stderr.write(`${message}\n`),
-      trace: (text) => process.stderr.write(text),
+      output: out,
+      status: (message) => out.write(message),
+      trace: (text) => out.write(text),
       color,
       width,
     });
@@ -303,6 +309,7 @@ async function runInteractive({
   agent,
   printPrompts,
 }: { agent: SingleAgent; printPrompts: boolean }): Promise<number> {
+  const out = createLineOutput(process.stdout);
   const readline = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -311,22 +318,18 @@ async function runInteractive({
   const loop = createInteractiveLoop({
     agent,
     submit: async (input) => {
-      const spinner = createSpinner();
-      let spinnerActive = false;
+      const spinner = createReadlineSpinner(out);
       const stopSpinner = (): void => {
-        if (!spinnerActive) return;
-        spinnerActive = false;
+        if (!spinner.active) return;
         spinner.stop();
       };
       const statusWithSpinner = (message: string): void => {
         spinner.suspend();
-        process.stderr.write(message);
+        out.write(message);
       };
       const removeEnd = agent.on("end", () => stopSpinner());
       const removeError = agent.on("error", () => stopSpinner());
       const removeToolStart = agent.on("tool_start", ({ name }) => {
-        if (spinnerActive) return;
-        spinnerActive = true;
         spinner.start(`${name}…`);
       });
       const removeToolEnd = agent.on("tool_end", () => stopSpinner());
@@ -334,7 +337,7 @@ async function runInteractive({
         agent,
         input,
         saveSession: () => agent.saveSession(),
-        output: process.stdout,
+        output: out,
         status: (message) => statusWithSpinner(`${message}\n`),
         trace: (text) => statusWithSpinner(text),
         color: isColorEnabled(process.env, process.stderr),
@@ -346,12 +349,12 @@ async function runInteractive({
       removeToolStart();
       removeToolEnd();
     },
-    write: (text) => process.stderr.write(text),
+    write: (text) => out.write(text),
     onIdle: () => {
-      process.stderr.write("\n");
-      readline.prompt();
+      readline.prompt(true);
     },
   });
+  out.attach(readline);
 
   readline.on("SIGINT", () => {
     loop.interrupt();
@@ -381,6 +384,7 @@ async function runInteractive({
     loop.handleLine(String(line));
     if (loop.isStopped()) break;
   }
+  out.detach();
   process.stdin.setRawMode?.(wasRaw);
   process.stdin.off("keypress", onKeypress);
 

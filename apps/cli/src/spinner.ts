@@ -1,6 +1,6 @@
 import process from "node:process";
 
-const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+export const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 export type SpinnerOptions = {
   output?: NodeJS.WriteStream;
@@ -12,6 +12,7 @@ export function createSpinner({ output = process.stderr, intervalMs = 120 }: Spi
   update: (label: string) => void;
   suspend: () => void;
   stop: () => void;
+  readonly active: boolean;
 } {
   let timer: NodeJS.Timeout | undefined;
   let frame = 0;
@@ -42,6 +43,9 @@ export function createSpinner({ output = process.stderr, intervalMs = 120 }: Spi
       clearInterval(timer);
       timer = undefined;
       output.write("\r\x1b[K");
+    },
+    get active(): boolean {
+      return timer !== undefined;
     },
   };
 }

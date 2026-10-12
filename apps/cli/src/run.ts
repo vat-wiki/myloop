@@ -33,7 +33,7 @@ export type RunTaskOptions = {
   };
   input: string;
   saveSession: () => Promise<void>;
-  output: NodeJS.WriteStream;
+  output: TaskOutput;
   status: (message: string) => void;
   trace: (text: string) => void;
   color?: boolean;
@@ -51,6 +51,12 @@ const COLORS = {
   magenta: "\x1b[35m",
   cyan: "\x1b[36m",
 } as const;
+
+export type TaskOutput = { write: (chunk: string) => unknown; stream?: (chunk: string) => unknown };
+
+function writeOutput(output: TaskOutput, chunk: string): void {
+  output.write(chunk);
+}
 
 export async function runTask({
   agent,
@@ -89,21 +95,24 @@ export async function runTask({
   const appendStream = (next: typeof stream, delta: string): void => {
     if (!delta) return;
     if (stream !== next) {
-      if (stream !== undefined) trace("\n");
+      if (stream !== undefined) {
+        if (output.stream) output.stream("\n");
+        else trace("\n");
+      }
       currentColor = next === "thinking" || next === "compaction_thinking" ? COLORS.magenta : COLORS.blue;
       event(next === "thinking" ? "thinking" : next === "text" ? "assistant" : next === "compaction_thinking" ? "context.compaction.thinking" : "context.compaction.summary");
       stream = next;
       if (next === "text") answerStreamed = true;
     }
-    if (next === "text") {
-      output.write(paintIfEnabled(delta, currentColor));
-    } else {
-      trace(paintIfEnabled(delta, currentColor));
-    }
+    const painted = paintIfEnabled(delta, currentColor);
+    if (output.stream) output.stream(painted);
+    else if (next === "text") writeOutput(output, painted);
+    else trace(painted);
   };
   const endStream = (): void => {
     if (stream !== undefined) {
-      if (stream === "text") output.write("\n");
+      if (output.stream) output.stream("\n");
+      else if (stream === "text") writeOutput(output, "\n");
       else trace("\n");
       stream = undefined;
     }
@@ -187,7 +196,7 @@ export async function runTask({
       status(paintIfEnabled("⚠ model output truncated at max_tokens", COLORS.yellow));
     }
     if (!answerStreamed) {
-      output.write(`${result.answer || "(no output)"}\n`);
+      writeOutput(output, `${result.answer || "(no output)"}\n`);
     }
     status(paintIfEnabled(
       `✓ ${formatDuration(Date.now() - startedAt)} · ${formatTimestamp()}`,
@@ -231,7 +240,7 @@ export function printSessionHistory({
   width = 72,
 }: {
   messages: ReadonlyArray<AgentMessage>;
-  output: NodeJS.WriteStream;
+  output: TaskOutput;
   status: (message: string) => void;
   trace: (text: string) => void;
   color?: boolean;
@@ -257,13 +266,13 @@ export function printSessionHistory({
     if (message.role === "user") {
       event("user");
       const text = historyText(message.content);
-      if (text) output.write(`${text}\n`);
+      if (text) writeOutput(output, `${text}\n`);
       continue;
     }
     if (message.role === "assistant") {
       event("assistant");
       const text = historyText(message.content);
-      if (text) output.write(`${text}\n`);
+      if (text) writeOutput(output, `${text}\n`);
       for (const block of message.content) {
         if (block.type === "tool_call") {
           event("tool.start", block.name);
