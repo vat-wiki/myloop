@@ -13,8 +13,9 @@ function fakeDrive(name: string, options?: {
   threshold?: number;
   cooldownMs?: number;
 }): Drive<TestWorld> {
-  return {
+    return {
     name,
+    requires: [],
     threshold: options?.threshold ?? 0.5,
     cooldownMs: options?.cooldownMs ?? 0,
     evaluate: () =>
@@ -65,6 +66,7 @@ describe("DriveArbiter", () => {
     const acts: Array<string> = [];
     const heatDrive = defineDrive<TestWorld>({
       name: "heat",
+      requires: [],
       threshold: 0.5,
       cooldownMs: 0,
       evaluate: (w) => (w.heat > 80 ? { pressure: 1, prompt: "cool down" } : null),

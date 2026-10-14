@@ -26,7 +26,7 @@ export type DriveArbiterOptions = {
 
 export type DriveArbiterDeps<W> = {
   /** 由宿主把真实世界状态翻译成 World 快照 */
-  evaluate: (tick: number) => W;
+  evaluate: (tick: number) => W | Promise<W>;
   act: (selection: DriveSelection) => Promise<void>;
   isBusy: () => boolean;
 };
@@ -70,11 +70,11 @@ export class DriveArbiter<W> {
       return null;
     }
 
-    const world = deps.evaluate(tick);
+    const world = await deps.evaluate(tick);
     const candidates: Array<{ drive: Drive<never>; outcome: DriveOutcome; pressure: number }> = [];
     const evaluations: Array<DriveEvaluation> = [];
     for (const drive of this.#drives) {
-      const outcome = drive.evaluate(world as never);
+      const outcome = await drive.evaluate(world as never);
       const lastTrigger = this.#cooldowns.get(drive.name);
       const cooling = lastTrigger !== undefined && now - lastTrigger < drive.cooldownMs;
       const passed = outcome !== null && outcome.pressure >= drive.threshold && !cooling;

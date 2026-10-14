@@ -9,7 +9,14 @@ import {
   type UnreadMessage,
 } from "./drives.js";
 import type { MemorySenses } from "../memory/memory.js";
-import { runTask } from "../run.js";
+import { runTask, type TaskOutput } from "../run.js";
+import {
+  builtInSensors,
+  createSensorRegistry,
+  type SensorDefinition,
+  type SensorRegistry,
+  type SensorSnapshot,
+} from "./sensors.js";
 
 /** CLI bot 的世界：arbiter 每次心跳会向宿主要一份这样的快照 */
 export type CliWorld = {
@@ -23,12 +30,15 @@ export type CliWorld = {
   pendingLines: number;
   brokenLinkCount: number;
   stalestDays: number | null;
+  sensors: SensorSnapshot;
 };
 
 export type BotHostOptions = {
   agent: SingleAgent;
   color: boolean;
   width?: number;
+  /** 终端渲染层（LineOutput）：驱力行动的输出必须走这里，裸写 stdout 会撞上 readline 输入框 */
+  output: TaskOutput;
   /** bot 模式下 readline 收到、因 agent 忙而未处理的用户输入 */
   unread: () => ReadonlyArray<UnreadMessage>;
   /** act 成功后由宿主回写，供 self-maintenance 计算空闲 */
@@ -37,6 +47,10 @@ export type BotHostOptions = {
   /** 记忆库健康信号（可选：宿主没配记忆时不产生记忆驱力压力） */
   memorySenses?: () => MemorySenses;
   drives?: ReadonlyArray<Drive<CliWorld>>;
+  extensionDrives?: ReadonlyArray<Drive<CliWorld>>;
+  extensionSensors?: ReadonlyArray<SensorDefinition<unknown>>;
+  sensorRegistry?: SensorRegistry;
+  cwd?: string;
   now?: () => number;
 };
 
@@ -52,23 +66,43 @@ export function createBotHost(options: BotHostOptions): {
   const now = options.now ?? Date.now;
   const probes = options.probes ?? [];
 
-  const drives = options.drives ?? [
+  const builtInDrives = options.drives ?? [
     respondUnreadDrive<CliWorld>(),
     selfCheckDrive<CliWorld>(),
     selfMaintenanceDrive<CliWorld>(),
     memoryGroomingDrive<CliWorld>(),
   ];
+  const drives = [...builtInDrives, ...(options.extensionDrives ?? [])];
 
   let lastActionAt: number | undefined;
+  const sensorRegistry = options.sensorRegistry ?? createSensorRegistry({
+    sensors: [...builtInSensors, ...(options.extensionSensors ?? [])],
+  });
 
   const deps: DriveArbiterDeps<CliWorld> = {
     isBusy: () => agent.running,
 
-    evaluate: (tick): CliWorld => {
+    evaluate: async (tick): Promise<CliWorld> => {
       const pending = options.unread();
       const memory = options.memorySenses?.();
+      const currentTime = now();
+      const sensors = await sensorRegistry.read({
+        cwd: options.cwd ?? process.cwd(),
+        now: currentTime,
+        tick,
+        lastActionAt,
+        unread: pending,
+        failedHealthChecks: probes.filter((probe) => {
+          try {
+            return !probe();
+          } catch {
+            return true;
+          }
+        }).length,
+        memorySenses: options.memorySenses ? () => memory : undefined,
+      });
       return {
-        now: now(),
+        now: currentTime,
         tick,
         unreadCount: pending.length,
         oldestUnreadAt: pending[0]?.at,
@@ -78,12 +112,13 @@ export function createBotHost(options: BotHostOptions): {
         pendingLines: memory?.pendingLines ?? 0,
         brokenLinkCount: memory?.brokenLinkCount ?? 0,
         stalestDays: memory?.stalestDays ?? null,
+        sensors,
       };
     },
 
     act: async (selection: DriveSelection) => {
       const prompt = `[${selection.drive.name}] ${selection.outcome.prompt}`;
-      const handled = await actWithModel({ agent, prompt, color: options.color, width: options.width });
+      const handled = await actWithModel({ agent, prompt, color: options.color, width: options.width, output: options.output });
       if (handled) {
         lastActionAt = now();
         options.markAction?.(lastActionAt);
@@ -94,21 +129,24 @@ export function createBotHost(options: BotHostOptions): {
   return { deps, drives };
 }
 
-async function actWithModel({ agent, prompt, color, width }: {
+async function actWithModel({ agent, prompt, color, width, output }: {
   agent: SingleAgent;
   prompt: string;
   color: boolean;
   width?: number;
+  output: TaskOutput;
 }): Promise<boolean> {
-  process.stderr.write(`\n♥ ${prompt.split("]")[0]}]\n`);
+  const driveName = prompt.split("]")[0] ?? "";
+  const summary = prompt.split("\n")[0]?.replace(/^\[[^\]]+\]\s*/, "") ?? "";
+  output.write(`♥ ${driveName}] ${summary}`);
   try {
     await runTask({
       agent,
       input: prompt,
       saveSession: () => agent.saveSession(),
-      output: process.stdout,
-      status: (message) => process.stderr.write(`${message}\n`),
-      trace: (text) => process.stderr.write(text),
+      output,
+      status: (message) => output.write(message),
+      trace: (text) => output.write(text),
       color,
       width,
     });

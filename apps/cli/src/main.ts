@@ -19,6 +19,7 @@ import {
 import { createCliSessionId, FileSessionStore } from "./session.js";
 import { createBotHost } from "./bot/host.js";
 import type { UnreadMessage } from "./bot/drives.js";
+import { loadBotModules } from "./bot/modules.js";
 import { DriveArbiter } from "./bot/arbiter.js";
 import { Memory, renderMemorySection } from "./memory/memory.js";
 
@@ -145,6 +146,8 @@ export async function main(argv: ReadonlyArray<string> = process.argv.slice(2)):
       return await runBotLoop({
         agent,
         heartbeatIntervalMs: options.heartbeatIntervalMs,
+        sensorPaths: options.botSensors,
+        drivePaths: options.botDrives,
         color: isColorEnabled(process.env, process.stderr),
         width: process.stderr.columns,
       });
@@ -184,16 +187,25 @@ function drainReadlineTail(readline: Interface): string {
 export async function runBotLoop({
   agent,
   heartbeatIntervalMs,
+  sensorPaths,
+  drivePaths,
   color,
   width,
 }: {
   agent: SingleAgent;
   heartbeatIntervalMs?: number;
+  sensorPaths?: ReadonlyArray<string>;
+  drivePaths?: ReadonlyArray<string>;
   color: boolean;
   width?: number;
 }): Promise<number> {
   let botStopped = false;
   const out = createLineOutput(process.stdout);
+  const { sensors: extensionSensors, drives: extensionDrives } = await loadBotModules({
+    sensorPaths,
+    drivePaths,
+    cwd: process.cwd(),
+  });
 
   const redraw = (): void => {
     if (!agent.running) readline.prompt();
@@ -205,8 +217,11 @@ export async function runBotLoop({
     agent,
     color,
     width,
+    output: out,
     unread: () => pendingUnread,
     memorySenses: () => memory.senses(),
+    extensionSensors,
+    extensionDrives,
   });
   const arbiter = new DriveArbiter<CliWorldShape>({
     drives: [...host.drives],
@@ -279,10 +294,11 @@ export async function runBotLoop({
   let lineBatch: Array<string> = [];
   let lineBatchFlushScheduled = false;
   readline.prompt();
-  for await (const line of readline) {
+  // line 监听必须同步（同交互模式）：否则 paste-end 的吸尾会先于 line 事件入批，顺序颠倒
+  readline.on("line", (line) => {
     // 粘贴的多行文本会在同一次 flush 里连续到达：合批为一条消息，避免逐行拆散
     lineBatch.push(String(line));
-    if (lineBatchFlushScheduled) continue;
+    if (lineBatchFlushScheduled) return;
     lineBatchFlushScheduled = true;
     setImmediate(() => {
       lineBatchFlushScheduled = false;
@@ -294,7 +310,11 @@ export async function runBotLoop({
       } else if (input) {
         if (agent.running) {
           pendingUnread.push({ text: input, at: Date.now(), source: "user" });
-          out.write("(agent busy — queued as unread)");
+          // 排队回显带消息预览：只确认不回显内容会让用户以为输入丢了
+          const firstLine = input.split("\n")[0] ?? "";
+          const preview = firstLine.length > 40 ? `${firstLine.slice(0, 40)}…` : firstLine;
+          const extra = input.includes("\n") ? ` (+${input.split("\n").length - 1} lines)` : "";
+          out.write(`(agent busy — queued as unread: ${preview}${extra})`);
         } else {
           void submit(input)
             .catch(() => {})
@@ -306,7 +326,8 @@ export async function runBotLoop({
       if (botStopped) readline.close();
       else readline.prompt();
     });
-  }
+  });
+  await once(readline, "close");
 
   process.stdin.setRawMode?.(wasRaw);
   process.stdin.off("keypress", onKeypress);

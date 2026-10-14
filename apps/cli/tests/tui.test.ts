@@ -37,6 +37,20 @@ function setupWrappedRegion(rows = 6, columns = 5) {
   return { input, rl, out, rendered: () => chunks.join("") };
 }
 
+async function waitForRender(
+  rendered: () => string,
+  isReady: (text: string) => boolean,
+): Promise<string> {
+  const deadline = Date.now() + 100;
+  let text = rendered();
+  while (!isReady(text)) {
+    if (Date.now() > deadline) throw new Error("readline did not repaint in time");
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    text = rendered();
+  }
+  return text;
+}
+
 describe("tui", () => {
   it("pins the prompt below the append-only log region", () => {
     const { rendered } = setupRegion(6);
@@ -82,11 +96,11 @@ describe("tui", () => {
     expect(text.endsWith("\x1b8")).toBe(true);
   });
 
-  it("writes logs into the region and restores the prompt cursor", () => {
+  it("writes logs into the region and restores the prompt cursor", async () => {
     const { out, rendered } = setupRegion(6);
     out.write("log\n");
     expect(rendered()).toContain("\x1b7\x1b[4;1Hlog\r\n\x1b8");
-    expect(rendered().endsWith("\x1b[1G\x1b[0J> \x1b[3G")).toBe(true);
+    await waitForRender(rendered, (text) => text.endsWith("\x1b[1G\x1b[0J> \x1b[3G"));
   });
 
   it("composes a home-abbreviated prompt", () => {
@@ -101,19 +115,20 @@ describe("tui", () => {
   });
 
   it("lifts the prompt line before writing a log chunk", async () => {
-    const { input, out, rendered } = setup();
+    const { input, out, rendered, rl } = setup();
     input.write("hi");
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    rl.prompt(true);
+    await waitForRender(rendered, (text) => text.includes("> hi"));
 
     out.write("[log] something happened");
 
     expect(rendered()).toContain("\x1b[1G\x1b[0J[log] something happened\r\n\x1b[1G\x1b[0J> hi");
   });
 
-  it("does not double-newline chunks that already end with one", () => {
+  it("does not double-newline chunks that already end with one", async () => {
     const { out, rendered } = setup();
     out.write("a\n");
-    expect(rendered()).toMatch(/^\x1b\[1G\x1b\[0Ja\r\n\x1b\[1G\x1b\[0J> /);
+    await waitForRender(rendered, (text) => /^\x1b\[1G\x1b\[0Ja\r\n\x1b\[1G\x1b\[0J> /.test(text));
   });
 
   it("preserves multi-line logs as separate terminal lines", () => {
@@ -122,13 +137,15 @@ describe("tui", () => {
     expect(rendered()).toContain("one\r\ntwo\r\n");
   });
 
-  it("appends stream fragments once without replaying prior output", () => {
+  it("appends stream fragments once without replaying prior output", async () => {
     const { out, rendered } = setup();
     const line = "这行中文会自动换行并且不能重复";
     out.stream(line);
     out.stream("!");
     out.stream("\n");
-    const text = rendered();
+    const text = await waitForRender(rendered, (current) =>
+      current.includes(`${line}!\r\n\x1b[1G\x1b[0J> `),
+    );
     expect(text).toContain(`${line}!`);
     expect(text).not.toContain(`${line}!${line}`);
     expect(text).not.toContain("\x1b7");
@@ -172,9 +189,9 @@ describe("tui", () => {
     expect(rendered()).toContain("\x1b[1G\x1b[0JHel");
     expect(rendered()).toContain("Hello world");
     out.stream("\n");
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(rendered()).toContain("Hello world\r\n");
-    expect(rendered().endsWith("> \x1b[3G")).toBe(true);
+    await waitForRender(rendered, (text) =>
+      text.includes("Hello world\r\n") && text.endsWith("> \x1b[3G"),
+    );
   });
 
   it("clears fragments and repaints the prompt when a write interrupts the stream", () => {

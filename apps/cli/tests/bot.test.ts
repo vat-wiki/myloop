@@ -5,6 +5,11 @@ import type { DriveArbiterDeps } from "../src/bot/arbiter.js";
 
 type HeartbeatEvent = { tick: number; at: number; running: boolean };
 
+function createCollectOutput(): { output: { write: (chunk: string) => void }; lines: Array<string> } {
+  const lines: Array<string> = [];
+  return { output: { write: (chunk) => lines.push(chunk) }, lines };
+}
+
 function createBotAgent(running = false): {
   agent: SingleAgent;
   listeners: Map<string, Array<(event: never) => void>>;
@@ -59,7 +64,7 @@ async function settle(): Promise<void> {
 }
 
 describe("createBotHost", () => {
-  it("builds a world snapshot from unread queue and probes", () => {
+  it("builds a world snapshot from unread queue and probes", async () => {
     const harness = createBotAgent();
     const pending = [{ text: "hello", at: 1_000, source: "user" as const }];
     const { deps } = createBotHost({
@@ -70,7 +75,7 @@ describe("createBotHost", () => {
       now: () => 5_000,
     });
 
-    const world = deps.evaluate(3) as CliWorld;
+    const world = await deps.evaluate(3) as CliWorld;
     expect(world).toMatchObject({
       now: 5_000,
       tick: 3,
@@ -83,10 +88,12 @@ describe("createBotHost", () => {
 
   it("act runs the prompt through the agent and records the action time", async () => {
     const harness = createBotAgent();
+    const { output, lines } = createCollectOutput();
     let markedAt: number | undefined;
     const { deps } = createBotHost({
       agent: harness.agent,
       color: false,
+      output,
       unread: () => [],
       markAction: (at) => {
         markedAt = at;
@@ -94,17 +101,20 @@ describe("createBotHost", () => {
       now: () => 42_000,
     });
 
-    await deps.act({ drive: { name: "respond-unread", threshold: 0.5, cooldownMs: 0, evaluate: () => null }, outcome: { pressure: 1, prompt: "go" } });
+    await deps.act({ drive: { name: "respond-unread", requires: [], threshold: 0.5, cooldownMs: 0, evaluate: () => null }, outcome: { pressure: 1, prompt: "go" } });
     expect(harness.runs).toEqual(["[respond-unread] go"]);
     expect(markedAt).toBe(42_000);
+    expect(lines.join("")).toContain("♥ [respond-unread] go");
   });
 
   it("wires agent heartbeat to arbiter ticks (host-driven loop)", async () => {
     const harness = createBotAgent();
+    const { output } = createCollectOutput();
     let markedAt: number | undefined;
     const { deps, drives } = createBotHost({
       agent: harness.agent,
       color: false,
+      output,
       unread: () => [],
       markAction: (at) => {
         markedAt = at;
@@ -112,6 +122,7 @@ describe("createBotHost", () => {
       now: () => 1_000,
       drives: [{
         name: "always",
+        requires: [],
         threshold: 0.5,
         cooldownMs: 0,
         evaluate: () => ({ pressure: 1, prompt: "tick work" }),

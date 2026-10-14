@@ -31,8 +31,9 @@ DriveArbiter        → 裁决：过滤不达阈值/冷却中的，选最疼的�
 无需队列维护（去重/顺序/上限都不用管）。
 
 World 的形状由宿主声明：`DriveArbiter<W>` 的 W 就是宿主世界的类型。
-每个驱力 `Drive<W>` 只要求 W 含自己需要的字段（如 UnreadSenses），
-evaluate 收到的 world 即宿主快照本身——类型安全由泛型约束保证。
+内置驱力继续消费扁平的 `CliWorld`；内置感官以 TypeScript 对象注册到同一快照里。
+内置感官包括 `runtime.clock`、`terminal.unread`、`host.health`、`runtime.idle`、`memory.health`。
+新感官先抽成 sensor，再让驱力按 id 消费，避免继续膨胀中央 World 类型。
 
 将来若要处理"绝不能丢的交办任务"，再引入真事件队列与驱力并存：
 队列管必须做的，驱力管想做的。
@@ -74,6 +75,7 @@ pressure = clamp01(unreadCount / unreadQuota) × clamp01(age / patienceMs)
 | 概念 | 位置 |
 |---|---|
 | Drive<W> / defineDrive / 内置驱力（声明所需感官） | `bot/drives.ts` |
+| Sensor snapshot / 内置感官 | `bot/sensors.ts` |
 | DriveArbiter（门控/排序/冷却） | `bot/arbiter.ts` |
 | 心跳源 | `src/runtime/heartbeat.ts`（runtime 层，未改动） |
 | 接线点（eyes/hands 宿主实现） | `bot/host.ts` 的 `createBotHost`（已接：main.ts runBotLoop） |

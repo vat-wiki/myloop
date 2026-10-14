@@ -11,9 +11,10 @@ export type DriveOutcome = {
 
 export type Drive<W = unknown> = {
   name: string;
+  requires: ReadonlyArray<string>;
   threshold: number;
   cooldownMs: number;
-  evaluate(world: W): DriveOutcome | null;
+  evaluate(world: W): DriveOutcome | null | Promise<DriveOutcome | null>;
 };
 
 /** 自定义驱力的最小样板：实现 evaluate 纯函数，声明自己需要的感官即可 */
@@ -68,6 +69,7 @@ export function respondUnreadDrive<W extends UnreadSenses>(options?: {
   const patienceMs = options?.patienceMs ?? 10 * 60_000;
   return {
     name: "respond-unread",
+    requires: ["terminal.unread"],
     threshold: options?.threshold ?? 0.5,
     cooldownMs: options?.cooldownMs ?? 30_000,
     evaluate: ({ unreadCount, oldestUnreadAt, unreadMessages, now }) => {
@@ -110,6 +112,7 @@ export function selfCheckDrive<W extends HealthSenses = HealthSenses>(options?: 
 }): Drive<W> {
   return {
     name: "self-check",
+    requires: ["host.health"],
     threshold: options?.threshold ?? 0.8,
     cooldownMs: options?.cooldownMs ?? 60_000,
     evaluate: ({ failedHealthChecks }) => {
@@ -130,6 +133,7 @@ export function selfMaintenanceDrive<W extends IdleSenses = IdleSenses>(options?
   const idleFullMs = options?.idleFullMs ?? 120 * 60_000;
   return {
     name: "self-maintenance",
+    requires: ["runtime.idle"],
     threshold: options?.threshold ?? 0.6,
     cooldownMs: options?.cooldownMs ?? 6 * 60 * 60_000,
     evaluate: ({ lastActionAt, now }) => {
@@ -167,6 +171,7 @@ export function memoryGroomingDrive<W extends MemoryHealthSenses = MemoryHealthS
   const idleFullMs = options?.idleFullMs ?? 12 * 60 * 60_000;
   return {
     name: "memory-grooming",
+    requires: ["memory.health", "runtime.idle"],
     threshold,
     cooldownMs,
     evaluate: ({ pendingLines, brokenLinkCount, stalestDays, lastActionAt, now }) => {

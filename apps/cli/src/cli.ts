@@ -3,7 +3,10 @@ import { isAgentLogLevel, type AgentLogLevel, type ToolDefinition } from "myloop
 
 export type CliProtocol = "anthropic" | "openai-chat" | "openai-responses";
 
-export type CliConfig = AgentConfig;
+export type CliConfig = AgentConfig & {
+  botSensors?: ReadonlyArray<string>;
+  botDrives?: ReadonlyArray<string>;
+};
 
 export type CliOptions = {
   protocol: CliProtocol;
@@ -24,6 +27,8 @@ export type CliOptions = {
   heartbeatIntervalMs?: number;
   bot: boolean;
   botPrompt?: string;
+  botSensors?: ReadonlyArray<string>;
+  botDrives?: ReadonlyArray<string>;
   log: AgentLogLevel;
   configPath?: string;
   prompt?: string;
@@ -160,6 +165,8 @@ export function parseCliArgs(
     heartbeatIntervalMs: config.heartbeat?.intervalMs,
     bot,
     botPrompt: config.botPrompt,
+    botSensors: (config as CliConfig).botSensors,
+    botDrives: (config as CliConfig).botDrives,
     log,
     configPath,
     prompt: positionalArguments.join(" ").trim() || undefined,

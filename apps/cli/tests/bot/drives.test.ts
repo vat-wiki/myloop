@@ -100,6 +100,7 @@ describe("defineDrive (custom drives)", () => {
     type HeatWorld = { heat: number };
     const heatDrive: Drive<HeatWorld> = defineDrive({
       name: "heat",
+      requires: [],
       threshold: 0.5,
       cooldownMs: 60_000,
       evaluate: (world) => {

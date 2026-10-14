@@ -14,6 +14,47 @@ npm run cli -- --model gpt-test
 
 `--bot` 开启 bot 模式：复用运行时心跳（默认 60s 一次，`config.heartbeat.intervalMs` 可调），每个 tick 由驱力系统（respond-unread / self-check / self-maintenance / memory-grooming）评估是否行动，没驱力过阈就静默跳过（0 模型调用）；agent 忙时用户输入会记为未读，由驱力稍后处理。设计细节见 `src/bot/DESIGN.md`。
 
+驱力和感官当前只使用 TypeScript/JavaScript 实现。内置感官包括 `runtime.clock`、`terminal.unread`、`host.health`、`runtime.idle` 和 `memory.health`。每个感官输出结构化状态；驱力消费这些状态并返回 `pressure` 和行动 `prompt`。没有 Markdown manifest、外部进程协议或自动文件扫描。
+
+自定义驱力用 `.mjs` 显式声明，不做目录扫描。创建 `repo-health.mjs`：
+
+```js
+export default {
+  id: "repo.health",
+  read: () => ({ dirtyFiles: 8 }),
+};
+```
+
+再创建 `repo-maintenance.mjs`：
+
+```js
+export default {
+  name: "repo-maintenance",
+  requires: ["repo.health"],
+  threshold: 0.5,
+  cooldownMs: 60_000,
+  evaluate({ sensors }) {
+    const { dirtyFiles } = sensors["repo.health"] ?? {};
+    if (!dirtyFiles) return null;
+    return {
+      pressure: Math.min(1, dirtyFiles / 10),
+      prompt: "Check dirty repository files and propose whether to commit.",
+    };
+  },
+};
+```
+
+然后在 `.agents/myloop.json` 里挂载：
+
+```json
+{
+  "botSensors": ["./repo-health.mjs"],
+  "botDrives": ["./repo-maintenance.mjs"]
+}
+```
+
+配置路径相对 CLI 当前工作目录解析；重复 id/name 会报错，驱力依赖不存在的 sensor 也会报错。
+
 bot 模式带记忆库：`.agents/myloop/memory/`（项目内找不到则回落 `~/.agents/myloop/memory/`）。`index.md` 是唯一常驻注入 system prompt 的门户索引，`state.md` 是交班条（此刻停在哪，handover 事件的落地），条目由模型用文件工具自主维护（`[[wikilink]]` 关联、pending.md 待消化摘要），代码只负责脚手架、压缩摘要进 pending 和健康信号（积压/断链/陈旧）——记忆库本身没有硬编码结构，由 memory-grooming 驱力整理。详见 `src/memory/memory.ts`。
 
 `--log=off|events|errors` 控制模型和工具审计日志，默认 `events`；`--log` 等价于 `--log=events`。事件文件在 `.agents/myloop/logs/`，运行时异常写入同目录的 `diagnostics-*.jsonl`。会话文件保存在 `.agents/myloop/sessions/`。
