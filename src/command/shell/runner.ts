@@ -3,6 +3,7 @@ import process from "node:process";
 import { spawn as spawnProcess } from "node:child_process";
 
 import { DEFAULT_HARD_TIMEOUT, DEFAULT_IDLE_TIMEOUT, KILL_GRACE_MS, cleanEnv } from "./internal.js";
+import { INLINE_OUTPUT_LIMIT, formatCommandOutput } from "./output.js";
 import { resolveShell } from "./shell-resolver.js";
 
 export type RunShellOptions = {
@@ -22,44 +23,45 @@ export type CommandResult = {
   status: CommandStatus;
   exitCode: number | null;
   signal: NodeJS.Signals | null;
-  stdout: string;
-  stderr: string;
-  stdoutTruncated: boolean;
-  stderrTruncated: boolean;
+  output: string;
+  outputChars: number;
+  outputTruncated: boolean;
 };
 
-const OUTPUT_LIMIT = 30_000;
-const RESULT_LIMIT = 30_000;
+const RESULT_LIMIT = 12_000;
 
-class LimitedText {
+class OutputBuffer {
   readonly #chunks: string[] = [];
   #length = 0;
-  #truncated = false;
+  #totalChars = 0;
 
   add(data: string): void {
-    if (this.#length >= OUTPUT_LIMIT) {
-      this.#truncated = true;
-      return;
-    }
-
-    const remaining = OUTPUT_LIMIT - this.#length;
-    if (data.length > remaining) {
-      this.#chunks.push(data.slice(0, remaining));
-      this.#length = OUTPUT_LIMIT;
-      this.#truncated = true;
-      return;
-    }
-
+    this.#totalChars += data.length;
     this.#chunks.push(data);
     this.#length += data.length;
+    while (this.#length > INLINE_OUTPUT_LIMIT) {
+      const excess = this.#length - INLINE_OUTPUT_LIMIT;
+      const first = this.#chunks[0]!;
+      if (first.length <= excess) {
+        this.#chunks.shift();
+        this.#length -= first.length;
+      } else {
+        this.#chunks[0] = first.slice(excess);
+        this.#length -= excess;
+      }
+    }
   }
 
   text(): string {
-    return this.#truncated ? `${this.#chunks.join("")}\n...output truncated...` : this.#chunks.join("");
+    return this.#chunks.join("");
   }
 
   get truncated(): boolean {
-    return this.#truncated;
+    return this.#totalChars > INLINE_OUTPUT_LIMIT;
+  }
+
+  get totalChars(): number {
+    return this.#totalChars;
   }
 }
 
@@ -67,8 +69,7 @@ class ShellCommand {
   readonly #child: ReturnType<typeof spawnProcess>;
   readonly #signal?: AbortSignal;
   readonly #onAbort: () => void;
-  readonly #stdout = new LimitedText();
-  readonly #stderr = new LimitedText();
+  readonly #output = new OutputBuffer();
   readonly #exitPromise: Promise<void>;
 
   #status: CommandStatus = "exited";
@@ -107,11 +108,11 @@ class ShellCommand {
     this.#child.stdout?.setEncoding("utf8");
     this.#child.stderr?.setEncoding("utf8");
     this.#child.stdout?.on("data", (data: string) => {
-      this.#stdout.add(data);
+      this.#output.add(data);
       this.#armIdleTimer();
     });
     this.#child.stderr?.on("data", (data: string) => {
-      this.#stderr.add(data);
+      this.#output.add(data);
       this.#armIdleTimer();
     });
     this.#child.on("error", (error) => {
@@ -138,10 +139,9 @@ class ShellCommand {
       status: this.#status,
       exitCode: this.#exitCode,
       signal: this.#exitSignal,
-      stdout: this.#stdout.text(),
-      stderr: this.#stderr.text(),
-      stdoutTruncated: this.#stdout.truncated,
-      stderrTruncated: this.#stderr.truncated,
+      output: this.#output.text(),
+      outputChars: this.#output.totalChars,
+      outputTruncated: this.#output.truncated,
     };
   }
 
@@ -219,12 +219,17 @@ export function formatCommandResult(result: CommandResult): string {
   const header = result.status === "exited" && result.exitCode !== null
     ? `exit:${result.exitCode}`
     : result.status;
-  const sections = [
-    header,
-    `stdout:\n${result.stdout.trimEnd() || "(empty)"}`,
-    `stderr:\n${result.stderr.trimEnd() || "(empty)"}`,
-  ];
-  if (result.stdoutTruncated) sections.push("stdout truncated");
-  if (result.stderrTruncated) sections.push("stderr truncated");
+  const output = formatCommandOutput(result.output);
+  const sections = [header];
+  if (result.outputTruncated) {
+    sections.push(
+      "output_truncated:true",
+      `total_chars:${result.outputChars}`,
+      `returned_chars:${output.length}`,
+    );
+  }
+  sections.push(
+    `output:\n${output}`,
+  );
   return sections.join("\n").slice(0, RESULT_LIMIT);
 }

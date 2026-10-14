@@ -38,6 +38,8 @@ export type PtySnapshot = {
   cols: number;
   rows: number;
   lastOutputAt: number;
+  outputChars: number;
+  outputTruncated: boolean;
 };
 
 const DEFAULT_COLS = 120;
@@ -47,6 +49,7 @@ const DEFAULT_TAIL_LINES = 200;
 const DEFAULT_HARD_TIMEOUT = 120_000;
 const DEFAULT_IDLE_TIMEOUT = 30_000;
 const KILL_GRACE_MS = 2_000;
+const INLINE_OUTPUT_LIMIT = 10_000;
 
 class PtySession {
   readonly #pty: IPty;
@@ -55,6 +58,7 @@ class PtySession {
   readonly #onAbort: () => void;
   readonly #idleTimeout: number;
   readonly #exitPromise: Promise<void>;
+  #outputChars = 0;
 
   #pendingWrite = Promise.resolve();
   #status: PtyStatus = "running";
@@ -132,9 +136,14 @@ class PtySession {
     if (this.#ptyExited) return;
     this.#lastOutputAt = Date.now();
     this.#armIdleTimer();
+    this.#captureOutput(data);
     this.#pendingWrite = this.#pendingWrite.then(
       () => new Promise<void>((resolve) => this.#terminal.write(data, resolve)),
     );
+  }
+
+  #captureOutput(data: string): void {
+    this.#outputChars += data.length;
   }
 
   #armIdleTimer(): void {
@@ -224,6 +233,8 @@ class PtySession {
       cols: this.#terminal.cols,
       rows: this.#terminal.rows,
       lastOutputAt: this.#lastOutputAt,
+      outputChars: this.#outputChars,
+      outputTruncated: this.#outputChars > INLINE_OUTPUT_LIMIT,
     };
   }
 }

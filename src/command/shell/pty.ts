@@ -10,6 +10,7 @@ import {
   cleanEnv,
 } from "./internal.js";
 import { findExecutableInPath, isExecutable, resolveShell } from "./shell-resolver.js";
+import { INLINE_OUTPUT_LIMIT, formatCommandOutput } from "./output.js";
 
 export type RunPtyOptions = {
   command: string;
@@ -41,11 +42,13 @@ export type TerminalSnapshot = {
   cols: number;
   rows: number;
   lastOutputAt: number;
+  outputChars: number;
+  outputTruncated: boolean;
 };
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 32;
-const RESULT_LIMIT = 30_000;
+const RESULT_LIMIT = 12_000;
 export async function runPtyProcess(options: RunPtyOptions): Promise<TerminalSnapshot> {
   const helper = await findPtyHelper();
   const shell = options.args
@@ -90,7 +93,6 @@ async function runPtyWithHelper(helper: string, options: RunPtyOptions): Promise
     ...(options.args ?? []),
   ];
   if (options.cwd) args.splice(0, 0, "--cwd", options.cwd);
-
   return new Promise<TerminalSnapshot>((resolvePromise, rejectPromise) => {
     const stdoutChunks: Array<string> = [];
     const stderrChunks: Array<string> = [];
@@ -187,6 +189,8 @@ function abortedPtySnapshot(options: RunPtyOptions): TerminalSnapshot {
     cols: options.cols ?? DEFAULT_COLS,
     rows: options.rows ?? DEFAULT_ROWS,
     lastOutputAt: Date.now(),
+    outputChars: 0,
+    outputTruncated: false,
   };
 }
 
@@ -222,5 +226,15 @@ export function formatTerminalSnapshot(snapshot: TerminalSnapshot): string {
   const header = snapshot.status === "exited" && snapshot.exitCode !== null
     ? `exit:${snapshot.exitCode}`
     : snapshot.status;
-  return [header, ...snapshot.tail].join("\n").slice(0, RESULT_LIMIT);
+  const sections = [header];
+  const output = formatCommandOutput(snapshot.tail.join("\n"));
+  if (snapshot.outputTruncated) {
+    sections.push(
+      "output_truncated:true",
+      `total_chars:${snapshot.outputChars}`,
+      `returned_chars:${output.length}`,
+    );
+  }
+  sections.push(`output:\n${output}`);
+  return sections.join("\n").slice(0, RESULT_LIMIT);
 }

@@ -42,6 +42,8 @@ export type AgentConfig = {
   };
   bot?: boolean;
   botPrompt?: string;
+  botSensors?: Array<string>;
+  botDrives?: Array<string>;
 };
 
 export type ConfigSources = {
@@ -155,6 +157,8 @@ function validateAgentConfig(value: unknown): AgentConfig {
     "heartbeat",
     "bot",
     "botPrompt",
+    "botSensors",
+    "botDrives",
   ]);
 
   const config: AgentConfig = {};
@@ -233,6 +237,14 @@ function validateAgentConfig(value: unknown): AgentConfig {
       throw new Error("config botPrompt cannot be empty");
     }
     config.botPrompt = input.botPrompt;
+  }
+
+  if (input.botSensors !== undefined) {
+    config.botSensors = assertStringArray(input.botSensors, "config botSensors");
+  }
+
+  if (input.botDrives !== undefined) {
+    config.botDrives = assertStringArray(input.botDrives, "config botDrives");
   }
 
   return config;
@@ -412,4 +424,11 @@ function assertString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string") {
     throw new Error(`${name} must be a string`);
   }
+}
+
+function assertStringArray(value: unknown, name: string): Array<string> {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`${name} must be an array of non-empty strings`);
+  }
+  return value;
 }

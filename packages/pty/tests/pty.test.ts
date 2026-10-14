@@ -2,6 +2,58 @@ import { describe, expect, it } from "vitest";
 import { runPtyCommand } from "../src/pty.js";
 
 describe("runPtyCommand", () => {
+  it("does not mark small output as truncated", async () => {
+    const snapshot = await runPtyCommand({
+      command: "/bin/sh",
+      args: ["-c", "printf small; exit 0"],
+      cols: 80,
+      rows: 24,
+      timeout: 5_000,
+      idleTimeout: 5_000,
+    });
+
+    expect(snapshot.outputTruncated).toBe(false);
+    expect(snapshot.outputChars).toBeGreaterThan(0);
+  });
+
+  it("marks large output as truncated and keeps the tail", async () => {
+    const snapshot = await runPtyCommand({
+      command: "/bin/sh",
+      args: ["-c", 'node -e "for (let i = 0; i < 5000; i++) console.log(\'out \' + i)"'],
+      cols: 80,
+      rows: 24,
+      timeout: 5_000,
+      idleTimeout: 5_000,
+    });
+
+    expect(snapshot.outputTruncated).toBe(true);
+    expect(snapshot.outputChars).toBeGreaterThan(10_000);
+    expect(snapshot.tail.at(-1)).toContain("out 4999");
+  });
+
+  it("uses a 10k-character truncation threshold", async () => {
+    const atThreshold = await runPtyCommand({
+      command: "/bin/sh",
+      args: ["-c", 'node -e "process.stdout.write(\'x\'.repeat(10_000))"'],
+      cols: 80,
+      rows: 24,
+      timeout: 5_000,
+      idleTimeout: 5_000,
+    });
+    const overThreshold = await runPtyCommand({
+      command: "/bin/sh",
+      args: ["-c", 'node -e "process.stdout.write(\'x\'.repeat(10_001))"'],
+      cols: 80,
+      rows: 24,
+      timeout: 5_000,
+      idleTimeout: 5_000,
+    });
+
+    expect(atThreshold.outputChars).toBe(10_000);
+    expect(atThreshold.outputTruncated).toBe(false);
+    expect(overThreshold.outputTruncated).toBe(true);
+  });
+
   it("captures screen output and exit code for a successful command", async () => {
     const snapshot = await runPtyCommand({
       command: "/bin/sh",

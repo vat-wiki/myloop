@@ -4,11 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import {
+  ShellCommandHost,
+  formatCommandResult,
   runPty,
   runShell,
 } from "../../src/command/shell/index.js";
 
 describe("runShell", () => {
+  it("describes the output truncation contract", () => {
+    const description = new ShellCommandHost().description;
+
+    expect(description).toContain("超过 10k 字符");
+    expect(description).toContain("尾部≤200行");
+    expect(description).toContain("output_truncated:true");
+  });
+
   it("runs commands without a PTY by default", async () => {
     const output = await runShell({
       command: "node -p 'Boolean(process.stdout.isTTY)'",
@@ -16,6 +26,70 @@ describe("runShell", () => {
     });
 
     expect(output).toContain("false");
+  });
+
+  it("returns complete small output without truncation metadata", async () => {
+    const output = await runShell({
+      command: "echo small-output",
+      timeout: 1_000,
+    });
+
+    expect(output).toContain("small-output");
+    expect(output).not.toContain("output_truncated:");
+  });
+
+  it("returns complete output below the inline limit", async () => {
+    const output = await runShell({
+      command: "node -e 'for (let i = 0; i < 120; i++) console.log(\"medium \" + i);'",
+      timeout: 1_000,
+    });
+
+    expect(output).not.toContain("output_truncated:");
+    expect(output).toContain("medium 0");
+    expect(output).toContain("medium 119");
+  });
+
+  it("marks large output and returns a bounded tail", async () => {
+    const output = await runShell({
+      command: "node -e 'for (let i = 0; i < 5000; i++) console.log(\"out \" + i);'",
+      timeout: 1_000,
+    });
+
+    expect(output).toContain("output_truncated:true");
+    expect(output).toContain("total_chars:");
+    expect(output).toContain("returned_chars:");
+    expect(output).toContain("out 4999");
+  });
+
+  it("caps long single-line output by characters", async () => {
+    const output = await runShell({
+      command: 'node -e \'console.log("x".repeat(20_000)); console.log("END");\'',
+      timeout: 1_000,
+    });
+
+    expect(output).toContain("output_truncated:true");
+    expect(output).toContain("END");
+    expect(output.length).toBeLessThanOrEqual(12_000);
+  });
+
+  it("combines stdout and stderr in arrival order", async () => {
+    const output = await runShell({
+      command: `node -e 'const fs = require("node:fs"); const newline = String.fromCharCode(10); fs.writeSync(1, "out 1" + newline); fs.writeSync(2, "err 1" + newline); setTimeout(() => { fs.writeSync(1, "out 2" + newline); for (let i = 1; i <= 120; i++) console.log("filler " + i); }, 50);'`,
+      timeout: 1_000,
+    });
+
+    expect(output).toContain("out 1\nerr 1\nout 2");
+  });
+
+  it("marks large PTY output as truncated", async () => {
+    const output = await runPty({
+      command: "node -e 'for (let i = 0; i < 5000; i++) console.log(\"pty \" + i);'",
+      timeout: 5_000,
+    });
+
+    expect(output).toContain("output_truncated:true");
+    expect(output).toContain("total_chars:");
+    expect(output).toContain("pty 4999");
   });
 
   it("captures stdout and stderr separately", async () => {
@@ -26,8 +100,26 @@ describe("runShell", () => {
     });
 
     expect(output).toContain("exit:7");
-    expect(output).toContain("stdout:\nout");
-    expect(output).toContain("stderr:\nerror");
+    expect(output).toContain("output:\nout\nerror");
+  });
+
+  it("keeps the last 200 lines and failing stderr", () => {
+    const stdout = Array.from({ length: 5_000 }, (_, index) => `stdout ${index}`).join("\n");
+    const output = formatCommandResult({
+      status: "exited",
+      exitCode: 1,
+      signal: null,
+      output: `${stdout}\nimportant failure`,
+      outputChars: stdout.length + "important failure".length,
+      outputTruncated: true,
+    });
+
+    expect(output.length).toBeLessThanOrEqual(12_000);
+    expect(output).not.toContain("stdout 0");
+    expect(output).toContain("stdout 4801");
+    expect(output).toContain("stdout 4999");
+    expect(output).not.toContain("stdout 4800\n");
+    expect(output).toContain("important failure");
   });
 
   it("honors a shell override", async () => {
